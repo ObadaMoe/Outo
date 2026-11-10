@@ -46,7 +46,7 @@ import kotlin.math.roundToInt
  * too, to pick a place, while the main screen keeps its app: YouTube plays on underneath,
  * and nothing is replaced or split. The cluster shows BYD's own view meanwhile (the app
  * is drawn at one size at a time) and has the map back once it closes: Back in the
- * sidebar, the tab's button, two fingers right (back to the main screen's app: [onMain])
+ * sidebar, the tab's button, two fingers left (back to the main screen's app: [onMain])
  * or down (out to all three screens: [onOut]). The car's Back goes to the app.
  */
 @Composable
@@ -142,8 +142,8 @@ fun ClusterPeek(app: AppId, onClose: () -> Unit, onMain: () -> Unit, onOut: () -
                 otility.bridge, density.density,
                 onTwoUp = {},
                 onTwoDown = { out() },
-                // It is the leftmost screen: only right, to the main screen.
-                onTwoSide = { dir -> if (dir > 0) toMain() },
+                // It is the leftmost screen: only on to the main screen, two fingers left.
+                onTwoSide = { fingers -> if (fingers < 0) toMain() },
                 onTouchedPane = {},
             )
         }

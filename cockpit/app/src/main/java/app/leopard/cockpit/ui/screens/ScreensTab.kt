@@ -212,10 +212,11 @@ fun ScreensTab() {
         // The picked map tapped again: opened up over the main screen (or shown there, if it's there).
         val peekMap: (String) -> Unit = { pkg -> controller.peekClusterMap(AppId(pkg)) { focus = it } }
         val peek by controller.peek.collectAsState()
-        // Two fingers left or right: the screen on that side, as between tabs (Driver, Main,
-        // Passenger, as they sit in the car). The cluster's map comes as itself, all of it,
-        // over the main screen, which keeps its app (YouTube plays on); two fingers right
-        // put it back on the cluster.
+        // Two fingers left or right: the next screen (Driver, Main, Passenger, as they sit in
+        // the car), the way pages follow the fingers: right brings the one on the left. The
+        // cluster's map comes as itself, all of it, over the main screen, which keeps its
+        // app (YouTube plays on); two fingers left put it back on the cluster.
+        // [dir]: -1 the screen on the left, 1 the one on the right.
         fun toSide(dir: Int) {
             val to = focus?.let { ScreenId.entries.getOrNull(it.ordinal + dir) } ?: return
             val map = state[ScreenId.DRIVER].apps.firstOrNull()?.takeIf { to == ScreenId.DRIVER && controller.keepsOnCluster(it) }
@@ -654,7 +655,7 @@ fun ScreensTab() {
                         bridge, density.density,
                         onTwoUp = { chrome = true; sidebarOpen = true; chromeTick++ },
                         onTwoDown = { focus = null },
-                        onTwoSide = { dir -> toSide(dir) },
+                        onTwoSide = { fingers -> toSide(-fingers) },
                         onTouchedPane = {},
                     )
                 }
@@ -881,7 +882,7 @@ fun ScreensTab() {
                     val f = focus
                     // No buttons on the left: Screens on the sidebar zooms back out (and so
                     // do the car's own Back and two fingers down). Nothing in the middle:
-                    // two fingers left or right go to the other screens.
+                    // two fingers left or right go to the next screen.
                     if (f == ScreenId.DRIVER) {
                         ClusterSwitch(clusterPick, clusterMaps, controller::setCluster, peekMap, Modifier.align(Alignment.TopEnd))
                     } else if (f != null) {

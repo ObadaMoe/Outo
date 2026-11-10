@@ -216,7 +216,7 @@ fun OtilityApp(app: Otility) {
                                 ClusterPeek(
                                     it,
                                     onClose = { screens.closePeek() },
-                                    // Two fingers right: the screen to the right of the cluster, the main one.
+                                    // Two fingers left: the screen to the right of the cluster, the main one.
                                     onMain = { screens.closePeek(); nav.openScreens(ScreenId.MAIN) },
                                     // Two fingers down: out, to all three screens.
                                     onOut = {

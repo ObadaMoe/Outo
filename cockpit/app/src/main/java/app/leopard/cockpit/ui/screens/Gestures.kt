@@ -142,7 +142,7 @@ class TouchTarget(
  *
  *  - two fingers up: show the controls and the sidebar
  *  - two fingers down: back out (to all three screens)
- *  - two fingers left or right: the screen on that side, like moving between tabs
+ *  - two fingers left or right: the next screen, the way pages follow the fingers
  *  - one finger in from the left edge: Back, inside the app
  *
  * Once a gesture is Otility's, the app gets a cancel, like when a system

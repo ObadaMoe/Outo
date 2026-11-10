@@ -270,7 +270,7 @@ private fun ScreensPage() {
         listOf(
             "Two fingers up" to "Show the controls and the sidebar",
             "Two fingers down" to "Back to all three screens",
-            "Two fingers left or right" to "The screen on that side. Left from the main screen opens the cluster's map over it; right puts it back",
+            "Two fingers left or right" to "The next screen, as pages turn. Right from the main screen opens the cluster's map over it; left puts it back",
             "Swipe in from the left edge" to "Back, inside the app",
             "Drag the divider" to "Resize; drag it to the edge for full screen",
             "Double-tap the divider" to "Equal halves",

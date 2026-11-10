@@ -22,7 +22,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - The car's three displays, drawn on a picture of the dashboard.
   - Drag apps from the sidebar onto a display, or split the main screen in two. You can swap the halves or drag the divider to resize them.
   - Tap a display to zoom in and use its apps; tap Screens on the sidebar, press the car's Back or swipe down with two fingers to zoom out. The controls hide after a few seconds; tap the dots at the top to bring them back.
-  - Zoomed in, swipe two fingers left or right to move between the displays, as between tabs. From the main screen, two fingers left open the driver cluster's map over it at full size, to pick a place, while the main screen's app keeps playing; two fingers right put the map back on the cluster.
+  - Zoomed in, swipe two fingers left or right to move between the displays, the way pages turn. From the main screen, two fingers right open the driver cluster's map over it at full size, to pick a place, while the main screen's app keeps playing; two fingers left put the map back on the cluster.
   - Save layouts, and choose what each display opens with at startup.
 - **Apps:**
   - Every app in the car, with search.
