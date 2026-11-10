@@ -15,6 +15,7 @@ import app.leopard.cockpit.nav.HudLink
 import app.leopard.cockpit.nav.Navigator
 import app.leopard.cockpit.nav.PhoneLink
 import app.leopard.cockpit.nav.PhoneLinkService
+import app.leopard.cockpit.nav.RoadLimit
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.ScreensController
 import app.leopard.cockpit.update.Updater
@@ -40,6 +41,8 @@ class Otility : Application() {
     /** The next turn on the windshield display and on the driver cluster (each off until switched on). */
     lateinit var hud: HudLink
     lateinit var cluster: ClusterTurns
+    /** The speed limit both send: the map's, or the car's camera's newer sign. */
+    lateinit var roadLimit: RoadLimit
     /** New versions of Outo from GitHub. */
     lateinit var updater: Updater
     val synth = EngineSynth()
@@ -60,8 +63,9 @@ class Otility : Application() {
         screens.clusterApp = { navigator.navApp() }
         screens.showScreen = { navigator.showScreen(it) }
         phone = PhoneLink(this)
-        hud = HudLink(this, prefs)
-        cluster = ClusterTurns(prefs)
+        roadLimit = RoadLimit()
+        hud = HudLink(this, prefs, roadLimit)
+        cluster = ClusterTurns(prefs, vehicle, roadLimit)
         seedDock()
         // "Start with the car": the helper opens Otility when the car is switched on, so
         // it knows the setting (BYD force-stops Otility at switch-off; see Ignition).

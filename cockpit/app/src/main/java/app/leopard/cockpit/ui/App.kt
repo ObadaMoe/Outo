@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.leopard.cockpit.Otility
+import app.leopard.cockpit.ui.screens.ClusterPeek
 import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.Appearance
 import app.leopard.cockpit.data.Tab
@@ -113,6 +115,8 @@ class Nav(start: Tab) {
     var settingsPage by mutableStateOf(SettingsPage.DISPLAY)
     /** Another tab asked the Screens tab to zoom into a screen. */
     var zoomRequest by mutableStateOf<ScreenId?>(null)
+    /** Something over the Screens tab asked it to zoom out (the cluster's map, opened up, two fingers down). */
+    var zoomOutRequest by mutableStateOf(false)
     fun openScreens(zoom: ScreenId? = null) {
         tab = Tab.SCREENS
         zoomRequest = zoom
@@ -180,6 +184,8 @@ fun OtilityApp(app: Otility) {
             LaunchedEffect(nav.tab) {
                 nav.menu = null
                 nav.dragging = null
+                // Nor does the cluster's map, opened up: it goes back to the cluster.
+                Otility.instance.screens.closePeek()
             }
             CompositionLocalProvider(LocalNav provides nav, LocalWindowPx provides windowPx) {
                 Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
@@ -202,10 +208,29 @@ fun OtilityApp(app: Otility) {
                 CompositionLocalProvider(LocalBackdrop provides if (nav.direct) noBackdrop else backdrop) {
                     // The floating window, the sidebar, menus, sheets and alerts: between the bars too.
                     Box(Modifier.fillMaxSize().windowInsetsPadding(CarBars)) {
+                        // The cluster's map, opened up over the main screen for a moment.
+                        val peek by Otility.instance.screens.peek.collectAsState()
+                        peek?.let {
+                            key(it) {
+                                val screens = Otility.instance.screens
+                                ClusterPeek(
+                                    it,
+                                    onClose = { screens.closePeek() },
+                                    // Two fingers right: the screen to the right of the cluster, the main one.
+                                    onMain = { screens.closePeek(); nav.openScreens(ScreenId.MAIN) },
+                                    // Two fingers down: out, to all three screens.
+                                    onOut = {
+                                        screens.closePeek()
+                                        if (nav.tab == Tab.SCREENS) nav.zoomOutRequest = true
+                                    },
+                                )
+                            }
+                        }
                         PipWindow()
                         AnimatedVisibility(
-                            // Zoomed in it steps aside, and comes back with the controls.
-                            visible = !nav.immersive || nav.sidebarPeek,
+                            // Zoomed in it steps aside, and comes back with the controls
+                            // (and with the cluster's map opened up, for its Back).
+                            visible = !nav.immersive || nav.sidebarPeek || peek != null,
                             // Down the whole left side, like CarPlay's.
                             modifier = Modifier.align(Alignment.CenterStart).windowInsetsPadding(WindowInsets.safeDrawing),
                             enter = fadeIn(tween(220)) + slideInHorizontally(spring(0.8f, Spring.StiffnessMediumLow)) { -it },

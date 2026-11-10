@@ -47,7 +47,31 @@ internal object Vehicle {
         // The turn signals' lamps (0 while off), for BYD's blind-spot camera on the cluster.
         "turnLeft" to "LIGHT_LEFT_TURN_SIGNAL_LIGHT",
         "turnRight" to "LIGHT_RIGHT_TURN_SIGNAL_LIGHT",
+        // Speed limits, read only: the camera's last sign (0: none), the limit the car
+        // settles on, the sign the cluster shows (255: none), and where the car takes its
+        // limit from (BYD's ADAS_SLA_STATE: 1 camera and navigation, 2 camera, 3 navigation).
+        "limitCamera" to "ADAS_SLR_OUTPUT_SEPPD_LIMIT",
+        "limitCar" to "ADAS_SLA_OUTPUT_SPEED_LIMIT",
+        "limitSign" to "INSTRUMENT_TRAFFIC_SIGN_IDENTIFY_VALUE",
+        "limitSource" to "ADAS_SLA_STATE",
     )
+
+    /**
+     * The id of one of the car's values by its name: in BYDAutoFeatureIds, or in one of
+     * its groups (some, like the camera's speed limit, are only there).
+     */
+    private fun featureId(name: String): Int? {
+        for (group in ID_GROUPS) {
+            val id = runCatching {
+                Class.forName("android.hardware.bydauto.BYDAutoFeatureIds$group").getDeclaredField(name)
+                    .apply { isAccessible = true }.getInt(null)
+            }.getOrNull()
+            if (id != null && id != 0) return id
+        }
+        return null
+    }
+
+    private val ID_GROUPS = listOf("", "\$Adas", "\$Instrument", "\$Setting", "\$Statistic")
 
     private class Reader(val manager: Any, val method: Method, val keys: List<String>, val ids: IntArray)
 
@@ -73,13 +97,10 @@ internal object Vehicle {
             val method = Class.forName("android.hardware.BYDAutoManager")
                 .getDeclaredMethod("getIntArray", Int::class.javaPrimitiveType, IntArray::class.java)
                 .apply { isAccessible = true }
-            val idClass = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds")
             val keys = ArrayList<String>()
             val ids = ArrayList<Int>()
             for ((key, name) in wanted) {
-                val id = runCatching {
-                    idClass.getDeclaredField(name).apply { isAccessible = true }.getInt(null)
-                }.getOrNull() ?: continue
+                val id = featureId(name) ?: continue
                 keys += key
                 ids += id
             }

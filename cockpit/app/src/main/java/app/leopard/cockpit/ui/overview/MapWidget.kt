@@ -263,8 +263,8 @@ fun MapWidget(
                 TouchRouter(
                     otility.bridge, density.density,
                     onTwoUp = {},
-                    onTwoLeft = { expanded = false },
-                    onThree = {},
+                    onTwoDown = { expanded = false },
+                    onTwoSide = {},
                     onTouchedPane = {},
                 )
             }

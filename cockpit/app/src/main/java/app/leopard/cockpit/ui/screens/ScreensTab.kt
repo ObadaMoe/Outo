@@ -155,8 +155,6 @@ private fun panes(content: Rect, ratio: Float): Pair<Rect, Rect> {
         Rect(content.left + lw + gap, content.top, content.right, content.bottom)
 }
 
-private fun ScreenId.next(dir: Int): ScreenId = ScreenId.entries[(ordinal + dir + 3) % 3]
-
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ScreensTab() {
@@ -211,6 +209,22 @@ fun ScreensTab() {
 
         // ---- The camera ------------------------------------------------------
         var focus by remember { mutableStateOf<ScreenId?>(null) }
+        // The picked map tapped again: opened up over the main screen (or shown there, if it's there).
+        val peekMap: (String) -> Unit = { pkg -> controller.peekClusterMap(AppId(pkg)) { focus = it } }
+        val peek by controller.peek.collectAsState()
+        // Two fingers left or right: the screen on that side, as between tabs (Driver, Main,
+        // Passenger, as they sit in the car). The cluster's map comes as itself, all of it,
+        // over the main screen, which keeps its app (YouTube plays on); two fingers right
+        // put it back on the cluster.
+        fun toSide(dir: Int) {
+            val to = focus?.let { ScreenId.entries.getOrNull(it.ordinal + dir) } ?: return
+            val map = state[ScreenId.DRIVER].apps.firstOrNull()?.takeIf { to == ScreenId.DRIVER && controller.keepsOnCluster(it) }
+            if (map == null || !controller.peekClusterMap(map) { focus = it }) focus = to
+        }
+        // The cluster's map, opened up over the main screen, two fingers down: out to all three screens.
+        LaunchedEffect(nav.zoomOutRequest) {
+            if (nav.zoomOutRequest) { focus = null; nav.zoomOutRequest = false }
+        }
         // Zoomed in on the main screen: the cluster's map, brought there, stays while it's
         // used, and goes back to the cluster when it's zoomed out of alone.
         val onMain = focus == ScreenId.MAIN
@@ -345,8 +359,8 @@ fun ScreensTab() {
             val c = cam.map(geo.content(ScreenId.MAIN), w, h)
             val bw = min(c.width * 0.62f, dp(340f))
             val bh = dp(40f)
-            // Zoomed in, the screen switcher is at the top (18dp in, 48dp tall): just under it.
-            val minTop = if (focus != null) safeTop + dp(18f + 48f + 12f) else dp(16f)
+            // Zoomed in, at the top (the buttons there are at its sides).
+            val minTop = if (focus != null) safeTop + dp(18f) else dp(16f)
             val top = max(c.top - dp(14f) - bh, minTop)
             return Rect(c.center.x - bw / 2f, top, c.center.x + bw / 2f, top + bh)
         }
@@ -497,8 +511,9 @@ fun ScreensTab() {
                     poke()
                 }) { sidebarMenu(a) }
             }
-            // Its button on the sidebar, tapped again, zooms out.
-            nav.reselect = if (focus != null) ({ focus = null }) else null
+            // Its button on the sidebar, tapped again, zooms out (the cluster's map,
+            // opened up over it, closes first: ClusterPeek has the button meanwhile).
+            if (peek == null) nav.reselect = if (focus != null) ({ focus = null }) else null
         }
         DisposableEffect(Unit) {
             onDispose {
@@ -638,8 +653,8 @@ fun ScreensTab() {
                     TouchRouter(
                         bridge, density.density,
                         onTwoUp = { chrome = true; sidebarOpen = true; chromeTick++ },
-                        onTwoLeft = { focus = null },
-                        onThree = { dir -> focus = focus?.next(dir) },
+                        onTwoDown = { focus = null },
+                        onTwoSide = { dir -> toSide(dir) },
                         onTouchedPane = {},
                     )
                 }
@@ -865,10 +880,10 @@ fun ScreensTab() {
                 Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(18.dp)) {
                     val f = focus
                     // No buttons on the left: Screens on the sidebar zooms back out (and so
-                    // does the car's own Back).
-                    ScreenSwitcher(focus ?: ScreenId.MAIN, { focus = it; poke() }, Modifier.align(Alignment.TopCenter))
+                    // do the car's own Back and two fingers down). Nothing in the middle:
+                    // two fingers left or right go to the other screens.
                     if (f == ScreenId.DRIVER) {
-                        ClusterSwitch(clusterPick, clusterMaps, controller::setCluster, Modifier.align(Alignment.TopEnd))
+                        ClusterSwitch(clusterPick, clusterMaps, controller::setCluster, peekMap, Modifier.align(Alignment.TopEnd))
                     } else if (f != null) {
                         Row(Modifier.align(Alignment.TopEnd), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             state[f].apps.forEach { id ->
@@ -941,7 +956,7 @@ fun ScreensTab() {
                         },
                         contentAlignment = Alignment.BottomCenter,
                     ) {
-                        ClusterSwitch(clusterPick, clusterMaps, controller::setCluster)
+                        ClusterSwitch(clusterPick, clusterMaps, controller::setCluster, peekMap)
                     }
                     ScreenId.entries.forEach { s ->
                         val apps = state[s].apps
@@ -1132,13 +1147,13 @@ private fun Grabber(modifier: Modifier = Modifier, onTap: () -> Unit) {
     }
 }
 
-/** Driver · Main · Passenger, at the top while zoomed in. */
 /**
  * What the driver cluster shows: BYD's own view, or one of the maps (only its map,
- * framed), by its icon. [picked] is the map's package, or null for BYD's.
+ * framed), by its icon. [picked] is the map's package, or null for BYD's. Tapping the
+ * map that is picked already opens it up over the main screen for a moment ([onPeek]).
  */
 @Composable
-private fun ClusterSwitch(picked: String?, maps: List<AppInfo>, onPick: (String?) -> Unit, modifier: Modifier = Modifier) {
+private fun ClusterSwitch(picked: String?, maps: List<AppInfo>, onPick: (String?) -> Unit, onPeek: (String) -> Unit, modifier: Modifier = Modifier) {
     val t = LocalTokens.current
     Row(
         modifier.glass(Capsule, GlassKind.Button).padding(4.dp),
@@ -1152,7 +1167,7 @@ private fun ClusterSwitch(picked: String?, maps: List<AppInfo>, onPick: (String?
                     .height(40.dp)
                     .clip(Capsule)
                     .background(if (sel) t.sel else Color.Transparent, Capsule)
-                    .noRipple { if (!sel) onPick(pkg) }
+                    .noRipple { if (!sel) onPick(pkg) else if (pkg != null) onPeek(pkg) }
                     .padding(horizontal = if (pkg == null) 16.dp else 10.dp),
                 contentAlignment = Alignment.Center,
             ) { content(sel) }
@@ -1165,30 +1180,6 @@ private fun ClusterSwitch(picked: String?, maps: List<AppInfo>, onPick: (String?
                 Segment(a.id.pkg) { sel ->
                     AppIcon(a, 28.dp, Modifier.graphicsLayer { alpha = if (sel) 1f else 0.6f })
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScreenSwitcher(current: ScreenId, onSelect: (ScreenId) -> Unit, modifier: Modifier = Modifier) {
-    val t = LocalTokens.current
-    Row(
-        modifier.glass(Capsule, GlassKind.Button).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        ScreenId.entries.forEach { s ->
-            val on = s == current
-            Box(
-                Modifier
-                    .height(40.dp)
-                    .clip(Capsule)
-                    .background(if (on) t.sel else Color.Transparent, Capsule)
-                    .noRipple { onSelect(s) }
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Txt(s.label, T.subhead.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium), if (on) t.text else t.text2)
             }
         }
     }

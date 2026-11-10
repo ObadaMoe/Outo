@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 8
+    const val VERSION = 9
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -53,6 +53,7 @@ object HelperMain {
         val service = HelperService()
         Thread({ deliverLoop(service) }, "otility-deliver").apply { isDaemon = true }.start()
         service.watchPopups()
+        SpeedLimits.start()
         // Let Otility open itself at start-up next time (apps that may draw over
         // others are allowed to start from the background).
         run(listOf("appops", "set", APP_PACKAGE, "SYSTEM_ALERT_WINDOW", "allow"))
@@ -227,6 +228,7 @@ internal class HelperService : IOtilityHelper.Stub() {
         }
         if (limitSent) {
             limitSent = false
+            SpeedLimits.sending = 0
             runCatching { Vehicle.setSpeedLimit(0) }
         }
     }
@@ -805,6 +807,8 @@ internal class HelperService : IOtilityHelper.Stub() {
         check()
         require(kmh in 0..Instrument.SPEED_LIMIT_MAX) { "not a speed limit: $kmh" }
         limitSent = kmh > 0
+        // Sent again every second from now on (see SpeedLimits).
+        SpeedLimits.sending = kmh
         return runCatching { Vehicle.setSpeedLimit(kmh) }
             .getOrElse { "error: ${(it.cause ?: it).javaClass.simpleName}: ${(it.cause ?: it).message}" }
     }

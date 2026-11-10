@@ -140,9 +140,9 @@ class TouchTarget(
  * Passes touches on a zoomed-in screen through to the app, in that app's own
  * pixels, and keeps a few gestures for Otility:
  *
- *  - two fingers up: show the controls and the dock
- *  - two fingers left: zoom back out
- *  - three fingers left or right: the next screen
+ *  - two fingers up: show the controls and the sidebar
+ *  - two fingers down: back out (to all three screens)
+ *  - two fingers left or right: the screen on that side, like moving between tabs
  *  - one finger in from the left edge: Back, inside the app
  *
  * Once a gesture is Otility's, the app gets a cancel, like when a system
@@ -152,8 +152,9 @@ class TouchRouter(
     private val bridge: CarBridge,
     private val dp: Float,
     private val onTwoUp: () -> Unit,
-    private val onTwoLeft: () -> Unit,
-    private val onThree: (Int) -> Unit,
+    private val onTwoDown: () -> Unit,
+    /** -1: two fingers to the left; 1: to the right. */
+    private val onTwoSide: (Int) -> Unit,
     private val onTouchedPane: (Int) -> Unit,
 ) {
     var targets: List<TouchTarget> = emptyList()
@@ -184,7 +185,7 @@ class TouchRouter(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 flushEdge()
-                if (gestures && ev.pointerCount in 2..3) {
+                if (gestures && ev.pointerCount == 2) {
                     multi = ev.pointerCount
                     startX = cx(ev); startY = cy(ev); startSpan = span(ev)
                     startTime = ev.eventTime
@@ -211,12 +212,13 @@ class TouchRouter(
                     val dy = cy(ev) - startY
                     val spanChange = abs(span(ev) - startSpan)
                     val far = 70 * dp
-                    if (multi == 2 && spanChange < 60 * dp) {
-                        if (-dy > far && abs(dy) > abs(dx) * 1.4f) { takeOver(ev); onTwoUp(); return true }
-                        if (-dx > far && abs(dx) > abs(dy) * 1.4f) { takeOver(ev); onTwoLeft(); return true }
-                    }
-                    if (multi == 3 && abs(dx) > far && abs(dx) > abs(dy) * 1.4f) {
-                        takeOver(ev); onThree(if (dx < 0) 1 else -1); return true
+                    if (spanChange < 60 * dp) {
+                        if (abs(dy) > far && abs(dy) > abs(dx) * 1.4f) {
+                            takeOver(ev); if (dy < 0) onTwoUp() else onTwoDown(); return true
+                        }
+                        if (abs(dx) > far && abs(dx) > abs(dy) * 1.4f) {
+                            takeOver(ev); onTwoSide(if (dx < 0) -1 else 1); return true
+                        }
                     }
                 }
                 forward(ev)

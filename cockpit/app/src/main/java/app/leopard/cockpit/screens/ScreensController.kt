@@ -123,11 +123,45 @@ class ScreensController(
         if (!held) bridge.cluster(true, prefs.settings.value.clusterCode)
     }
 
+    // ---- The cluster's map, opened up over the main screen for a moment ------------
+
+    private val _peek = MutableStateFlow<AppId?>(null)
+    /** The cluster's map, opened up over everything for now (see [peekClusterMap]), or null. */
+    val peek: StateFlow<AppId?> = _peek.asStateFlow()
+
+    /**
+     * Opens the cluster's map up over the main screen, all of it, to pick a place, without
+     * touching what the main screen has (ClusterPeek shows it, lent: see [lendClusterMap]).
+     * One that is on the main screen already is shown there instead ([show]). False if
+     * [app] isn't the cluster's map.
+     */
+    fun peekClusterMap(app: AppId, show: (ScreenId) -> Unit): Boolean {
+        if (!keepsOnCluster(app)) return false
+        if (_state.value.screenOf(app) == ScreenId.MAIN) {
+            show(ScreenId.MAIN)
+            return true
+        }
+        Log.i(CarBridge.TAG, "${app.pkg} opened up over the main screen")
+        _peek.value = app
+        return true
+    }
+
+    /** The cluster's map goes back to the cluster (see [peekClusterMap]). */
+    fun closePeek() {
+        if (_peek.value == null) return
+        Log.i(CarBridge.TAG, "${_peek.value?.pkg} back from over the main screen")
+        _peek.value = null
+    }
+
     init {
         // The switch above the Driver screen, flipped.
         ui.launch {
             // (A map picked there is the navigation app too.)
-            prefs.settings.map { it.mapOnCluster to it.navApp }.distinctUntilChanged().drop(1).collect { followSwitch(flipped = true) }
+            prefs.settings.map { it.mapOnCluster to it.navApp }.distinctUntilChanged().drop(1).collect {
+                followSwitch(flipped = true)
+                // Another map (or BYD's view) picked: the opened-up one closes.
+                _peek.value?.let { if (!keepsOnCluster(it)) closePeek() }
+            }
         }
     }
 
@@ -404,6 +438,19 @@ class ScreensController(
         when {
             _pip.value == app -> { place(app, DropTarget(on, Slot.FULL)); show(on) }
             from == on -> show(on)
+            // The cluster's map, while the main screen has something else (YouTube, say):
+            // first of all, only to use it for a moment (opened up over the main screen,
+            // which keeps its app), besides bringing it there for good. Asked even with
+            // "ask before replacing" off: these are different things, not a replace.
+            clusterMap && on == ScreenId.MAIN && state.screenOf(app) == ScreenId.DRIVER && state[on] != ScreenContent.Idle -> Alerts.show(
+                Alert(
+                    title = "$name is on the Driver cluster",
+                    message = "Control it here for a moment (${state[on].apps.joinToString(" and ") { label(it) }} stays on the Main screen), or bring it to the Main screen.",
+                    buttons = listOf(AlertButton("Control Only") { peekClusterMap(app, show) }) +
+                        hereChoices(app, on, verb = "Open") { show(on) } +
+                        AlertButton("Cancel", Role.CANCEL),
+                ),
+            )
             from != null -> Alerts.show(
                 Alert(
                     title = "$name is on the ${from.label} screen",

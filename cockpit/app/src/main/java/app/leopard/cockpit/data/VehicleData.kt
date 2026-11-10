@@ -36,6 +36,11 @@ data class VehicleData(val raw: Map<String, Int> = emptyMap()) {
     val tempPassenger: Int? get() = i("tempPassenger")?.takeIf { it in 5..40 }
     val acOn: Boolean? get() = i("acOn")?.let { it == 1 }
     val pluggedIn: Boolean? get() = i("charging")?.let { it == 1 }
+    /**
+     * The last speed-limit sign the car's camera read, in km/h (null: none now). The car
+     * answers 0 with none, and 255 or more for an unreadable one.
+     */
+    val cameraLimitKmh: Int? get() = i("limitCamera")?.takeIf { it in 5..250 }
 
     /** A turn signal is on: one side's lamp lit (both is the hazard lights). */
     val turnSignal: Boolean get() = ((i("turnLeft") ?: 0) > 0) != ((i("turnRight") ?: 0) > 0)

@@ -35,7 +35,7 @@ import kotlin.math.min
  * guiding it sends the whole frame every [PERIOD] ms, and at once when the turn
  * changes; when guidance ends it sends one "stopped" frame and lets go.
  */
-class HudLink(private val context: Context, private val prefs: Prefs) {
+class HudLink(private val context: Context, private val prefs: Prefs, private val roadLimit: RoadLimit) {
     companion object {
         private const val TAG = "OtilityHud"
         private const val GATEWAY_PKG = "com.ts.car.someip.service"
@@ -120,8 +120,9 @@ class HudLink(private val context: Context, private val prefs: Prefs) {
             road = t.street,
             eta = t.remainingSeconds?.let { Units.arrival(it) } ?: Units.clock24(t.eta),
             code = HudFrame.code(t.maneuver),
-            // The map's limit for this road, in place of the one the car guesses.
-            speedLimit = t.speedLimit?.takeIf { prefs.settings.value.hudSpeedLimit } ?: 0,
+            // The limit Outo sends the cluster too (the map's, or the camera's newer sign;
+            // see RoadLimit), in place of the one the car guesses.
+            speedLimit = if (!prefs.settings.value.hudSpeedLimit) 0 else roadLimit.current.takeIf { it > 0 } ?: t.speedLimit ?: 0,
             longitude = HudRoute.START_LONGITUDE,
             latitude = HudRoute.START_LATITUDE,
             guideLine = route.line,

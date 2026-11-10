@@ -262,15 +262,15 @@ private fun ScreensPage() {
             )
         }
         Separator()
-        Toggle("Gestures", s.gestures, "Two- and three-finger swipes when zoomed in") { st, v -> st.copy(gestures = v) }
+        Toggle("Gestures", s.gestures, "Two-finger swipes when zoomed in") { st, v -> st.copy(gestures = v) }
         Separator()
         Toggle("Restore the last layout", s.restoreLayout, "When Outo starts") { st, v -> st.copy(restoreLayout = v) }
     }
     Group(header = "Gestures when zoomed in") {
         listOf(
             "Two fingers up" to "Show the controls and the sidebar",
-            "Two fingers left" to "Back to all three screens",
-            "Three fingers left or right" to "The next screen",
+            "Two fingers down" to "Back to all three screens",
+            "Two fingers left or right" to "The screen on that side. Left from the main screen opens the cluster's map over it; right puts it back",
             "Swipe in from the left edge" to "Back, inside the app",
             "Drag the divider" to "Resize; drag it to the edge for full screen",
             "Double-tap the divider" to "Equal halves",
@@ -470,14 +470,16 @@ private fun DirectionsGroup() {
                 Switch(s.hudTurns, { on -> app.prefs.update { it.copy(hudTurns = on) } })
             }
             if (s.hudTurns) {
-                val limit = turn?.speedLimit
+                val mapName = turn?.let { app.catalog[AppId(it.pkg)]?.label } ?: "the map"
+                val sent = app.roadLimit.current.takeIf { it > 0 }
                 SettingRow(
                     "Speed limit from the map",
                     subtitle = when {
                         !s.hudSpeedLimit -> "The HUD shows the car's own speed limit"
                         !s.readMapScreen -> "Needs \"Read the map's screen\""
-                        limit != null -> "Sending $limit km/h from ${turn?.let { app.catalog[AppId(it.pkg)]?.label } ?: "the map"}"
-                        else -> "Waze's or Google Maps' limit for the road, in place of the car's own reading"
+                        sent != null && app.roadLimit.fromCamera -> "Sending $sent km/h from the car's camera, until $mapName shows a limit again"
+                        sent != null -> "Sending $sent km/h from $mapName"
+                        else -> "Waze's or Google Maps' limit for the road. A new sign the car's camera reads takes over until the map shows a limit again."
                     },
                 ) {
                     Switch(s.hudSpeedLimit, { on -> app.prefs.update { it.copy(hudSpeedLimit = on) } })

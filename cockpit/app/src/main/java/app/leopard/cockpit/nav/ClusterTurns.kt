@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.Prefs
+import app.leopard.cockpit.data.VehicleFeed
 import app.leopard.cockpit.helper.IOtilityHelper
 import app.leopard.cockpit.helper.Instrument
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,7 @@ import java.util.concurrent.Executors
  * cluster is still in navigation mode, and puts everything back when the
  * route ends.
  */
-class ClusterTurns(private val prefs: Prefs) {
+class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, private val roadLimit: RoadLimit) {
     companion object {
         private const val TAG = "OtilityCluster"
         private const val CHECK = 3000L
@@ -173,12 +174,17 @@ class ClusterTurns(private val prefs: Prefs) {
     }
 
     /**
-     * The map's speed limit for the road, while "Speed limit from the map" is on. Waze
-     * shows its sign only now and then, so the last one seen holds until the next
-     * turn's street changes; then none until the map shows one again.
+     * The speed limit to send, while "Speed limit from the map" is on: the map's for the
+     * road, until the car's camera reads a new sign, then the camera's until the map
+     * shows a limit again (see [RoadLimit]). Waze shows its sign only now and then, so
+     * the last one seen holds until the next turn's street changes; then none until the
+     * map shows one again.
      */
     private fun limitFor(t: NextTurn): Int {
-        if (!prefs.settings.value.hudSpeedLimit) return 0
+        if (!prefs.settings.value.hudSpeedLimit) {
+            roadLimit.reset()
+            return 0
+        }
         val seen = t.speedLimit?.takeIf { it in 5..Instrument.SPEED_LIMIT_MAX }
         if (seen != null) {
             heldLimit = seen
@@ -186,7 +192,13 @@ class ClusterTurns(private val prefs: Prefs) {
         } else if (t.street != heldFor) {
             heldLimit = 0
         }
-        return heldLimit
+        val camera = vehicle.data.value.cameraLimitKmh?.takeIf { it <= Instrument.SPEED_LIMIT_MAX }
+        val before = roadLimit.current to roadLimit.fromCamera
+        val kmh = roadLimit.update(seen, heldLimit, camera, SystemClock.uptimeMillis())
+        if (before != (kmh to roadLimit.fromCamera)) {
+            Log.i(TAG, "speed limit $kmh km/h from the ${if (roadLimit.fromCamera) "camera" else "map"} (map $heldLimit, camera ${camera ?: "none"})")
+        }
+        return kmh
     }
 
     private fun writeLimit(kmh: Int) {
@@ -255,6 +267,7 @@ class ClusterTurns(private val prefs: Prefs) {
         writeLimit(0)
         heldLimit = 0
         heldFor = null
+        roadLimit.reset()
         for ((feature, value) in Instrument.CLEAR) if (feature != Instrument.NAV_STATUS) write(feature, value)
         Log.i(TAG, "cluster cleared")
         armed = false
