@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outo app icon: black glass square, a tall serif O (the Abril Fatface O) built
+     like a tire, its tread etched in on the right, and the glass rim light on the
+     top and bottom edges. From the Outo design ("Logo & app icon").
+
+     The design cuts the tread out with a mask. A vector drawable has none, so the
+     cuts are drawn over it in the square's black instead: the tire side first, then
+     the black edge around the O and the grooves, then the O on top. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+
+    <!-- Square -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M230,0 H794 A230,230 0 0 1 1024,230 V794 A230,230 0 0 1 794,1024 H230 A230,230 0 0 1 0,794 V230 A230,230 0 0 1 230,0 Z" />
+
+    <!-- Rim light: bright at the top and bottom edges, almost clear in the middle -->
+    <path
+        android:strokeWidth="14"
+        android:pathData="M230,7 H794 A223,223 0 0 1 1017,230 V794 A223,223 0 0 1 794,1017 H230 A223,223 0 0 1 7,794 V230 A223,223 0 0 1 230,7 Z">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="7"
+                android:endX="0"
+                android:endY="1017">
+                <item android:offset="0" android:color="#9EFFFFFF" />
+                <item android:offset="0.12" android:color="#24FFFFFF" />
+                <item android:offset="0.5" android:color="#08FFFFFF" />
+                <item android:offset="0.88" android:color="#1FFFFFFF" />
+                <item android:offset="1" android:color="#73FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The tire side: a second O behind the first, lit white to grey across the tread -->
+    <path android:pathData="M598.1 869.2Q444.9 869.2 369.2 779.5Q293.5 689.9 293.5 519.9Q293.5 350 374.7 252.4Q455.9 154.8 604.5 154.8Q753.1 154.8 828.8 247.4Q904.5 340.1 904.5 510.5Q904.5 680.9 827.9 775.1Q751.3 869.2 598.1 869.2Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="740"
+                android:startY="0"
+                android:endX="920"
+                android:endY="0">
+                <item android:offset="0" android:color="#FFFFFF" />
+                <item android:offset="0.55" android:color="#EDEEF0" />
+                <item android:offset="1" android:color="#B9BBC2" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The black edge around the O, which hides the tire side behind it -->
+    <path
+        android:fillColor="#000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="72"
+        android:pathData="M416 892Q253 892 172.5 796.6Q92 701.2 92 520.4Q92 339.7 178.4 235.8Q264.8 132 422.9 132Q581 132 661.5 230.6Q742 329.1 742 510.4Q742 691.7 660.5 791.9Q579 892 416 892Z" />
+
+    <!-- Tread: the two grooves round the tire -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M606.6 158L631.9 166L650.2 174L665.1 182L677.9 190L689.1 198L698.9 206L707.7 214L715.8 222L723.2 230L730 238L736.2 246L742 254L747.4 262L752.5 270L757 278L761.5 286L765.4 294L769.3 302L772.8 310L776.1 318L779.1 326L782 334L784.6 342L787.1 350L789.4 358L791.5 366L793.5 374L795.3 382L796.9 390L798.4 398L799.9 406L801.1 414L802.2 422L803.3 430L804.1 438L805 446L805.6 454L806.2 462L806.7 470L807.1 478L807.4 486L807.6 494L807.7 502L807.8 510L807.7 518L807.6 526L807.4 534L807.1 542L806.7 550L806.3 558L805.6 566L805 574L804.2 582L803.3 590L802.3 598L801.1 606L799.9 614L798.5 622L797 630L795.4 638L793.6 646L791.7 654L789.5 662L787.3 670L784.8 678L782.2 686L779.3 694L776.3 702L773 710L769.5 718L765.8 726L761.8 734L757.5 742L753 750L748 758L742.8 766L737.1 774L731 782L724.4 790L717.2 798L709.5 806L700.9 814L691.3 822L680.7 830L668.7 838L654.8 846L638.1 854L616.6 862M631.9 158L665.3 166L687.4 174L704.5 182L718.9 190L731.3 198L742 206L751.6 214L760.2 222L768.1 230L775.3 238L781.9 246L787.9 254L793.6 262L798.9 270L803.7 278L808.3 286L812.4 294L816.4 302L820.1 310L823.5 318L826.6 326L829.6 334L832.3 342L834.9 350L837.3 358L839.4 366L841.4 374L843.3 382L845 390L846.6 398L848 406L849.3 414L850.4 422L851.5 430L852.4 438L853.2 446L853.9 454L854.5 462L855 470L855.4 478L855.7 486L855.9 494L856.1 502L856.2 510L856.1 518L856 526L855.8 534L855.4 542L855.1 550L854.6 558L854 566L853.3 574L852.4 582L851.6 590L850.5 598L849.4 606L848.1 614L846.6 622L845.1 630L843.4 638L841.6 646L839.6 654L837.4 662L835 670L832.6 678L829.8 686L826.9 694L823.7 702L820.4 710L816.7 718L812.9 726L808.7 734L804.2 742L799.5 750L794.3 758L788.8 766L782.9 774L776.4 782L769.5 790L761.9 798L753.6 806L744.3 814L733.9 822L722.2 830L708.8 838L693 846L673.3 854L646.6 862" />
+
+    <!-- Tread: the cuts across it, between the blocks -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M599.4 176.8L623.2 162.8M724.9 193.8L763.5 177.8M643.4 214.8L692.6 200.8M769.8 231.8L831 215.8M673 252.8L730.6 238.8M798.8 269.8L868.5 253.8M694.1 290.8L756.3 276.8M819.1 307.8L893.8 291.8M709.5 328.8L774.8 314.8M833.6 345.8L911.7 329.8M720.6 366.8L787.9 352.8M843.7 383.8L924.1 367.8M728.2 404.8L797.1 390.8M850.4 421.8L932.5 405.8M733 442.8L803.1 428.8M854.3 459.8L937.8 443.8M735.4 480.8L806.6 466.8M856 497.8L940.5 481.8M735.9 518.8L807.8 504.8M855.7 535.8L941 519.8M734.6 556.8L807.1 542.8M853.3 573.8L939.5 557.8M731.1 594.8L804.3 580.8M848.5 611.8L935.6 595.8M725.1 632.8L799.1 618.8M840.6 649.8L928.8 633.8M716.1 670.8L790.9 656.8M829.2 687.8L918.4 671.8M703.2 708.8L779 694.8M813 725.8L903.7 709.8M685.5 746.8L762.4 732.8M790.4 763.8L882.7 747.8M661.3 784.8L739.4 770.8M758 801.8L853 785.8M627.2 822.8L706.5 808.8M705.5 839.8L806 823.8M574.4 860.8L653.2 846.8" />
+
+    <!-- Tread: the fine sipes in each block -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M663.7 179.8L722.4 193.8M645.5 193.8L663.4 183.8M751.9 209.8L771 199.8M714.4 217.8L767 231.8M683.9 231.8L710.2 221.8M788.9 247.8L815 237.8M746.1 255.8L795.9 269.8M710.1 269.8L740.4 259.8M813.9 285.8L843.3 275.8M768.2 293.8L816.2 307.8M728.8 307.8L761.6 297.8M831.5 323.8L863.4 313.8M784.1 331.8L830.7 345.8M742.4 345.8L776.8 335.8M844.1 361.8L877.4 351.8M795.4 369.8L840.8 383.8M752 383.8L787.6 373.8M852.7 399.8L887.2 389.8M803.1 407.8L847.5 421.8M758.4 421.8L794.9 411.8M858.2 437.8L893.6 427.8M807.9 445.8L851.4 459.8M762.1 459.8L799.4 449.8M861.2 475.8L897.2 465.8M810.2 483.8L853.1 497.8M763.7 497.8L801.6 487.8M862 513.8L898.6 503.8M810.6 521.8L852.8 535.8M763.4 535.8L801.8 525.8M860.9 551.8L897.9 541.8M809 559.8L850.4 573.8M761.1 573.8L800 563.8M857.4 589.8L895.1 579.8M805.3 597.8L845.5 611.8M756.5 611.8L795.9 601.8M851.4 627.8L889.7 617.8M798.8 635.8L837.7 649.8M749.1 649.8L789.1 639.8M842.1 665.8L881.2 655.8M789 673.8L826.3 687.8M738.3 687.8L779.1 677.8M828.7 703.8L868.8 693.8M775.1 711.8L810.1 725.8M723.1 725.8L764.8 715.8M810 741.8L851.1 731.8M755.9 749.8L787.6 763.8M702.3 763.8L745 753.8M783.8 779.8L826.4 769.8M729 787.8L755.3 801.8M673.3 801.8L717.4 791.8M744.7 817.8L790.2 807.8M689.1 825.8L703.1 839.8M629.5 839.8L675.9 829.8M672.5 855.8L727.2 845.8" />
+
+    <!-- The O -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M541 555.7L541 477.7Q541 284.8 523.4 234.2Q503.9 176.3 467.8 162.6Q447.3 154.1 418 154.1Q388.7 154.1 367.7 162.6Q346.7 171 333.1 192.1Q319.4 213.2 311.1 236.4Q302.8 259.5 297.9 301.7Q292.1 362.8 292.1 482L292.1 557.9Q292.1 686.5 301.4 740.7Q310.6 795 324.3 818.2Q354.5 869.9 418 869.9Q495.1 869.9 518 799.8Q541 729.7 541 555.7ZM416 892Q253 892 172.5 796.6Q92 701.2 92 520.4Q92 339.7 178.4 235.8Q264.8 132 422.9 132Q581 132 661.5 230.6Q742 329.1 742 510.4Q742 691.7 660.5 791.9Q579 892 416 892Z" />
+</vector>

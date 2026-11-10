@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Local connection to the car's own debugging service (127.0.0.1), to start the helper. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Stays ready for places from the phone while another app is in front. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- See every app the car can launch, for the dock and the Apps tab. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- The car's SOME/IP gateway, which carries turns to the windshield display (HUD). -->
+        <package android:name="com.ts.car.someip.service" />
+    </queries>
+
+    <!-- No backups: files/adbkey is the key the car's debugging service trusts. -->
+    <application
+        android:name=".Otility"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_otility"
+        android:roundIcon="@drawable/ic_otility"
+        android:theme="@style/Theme.Otility"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|keyboard|keyboardHidden|navigation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Shown on the driver cluster's map channel (allowEmbedded), started by the shell.
+             DUMP: the shell holds it, normal apps can't, so only the shell can start it. -->
+        <activity
+            android:name=".ClusterTestActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:allowEmbedded="true"
+            android:resizeableActivity="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="app.leopard.cockpit.cluster" />
+
+        <!-- Waze or Google Maps on the driver cluster, map only. Started by the helper
+             (the shell) on the cluster's display, like ClusterTestActivity. -->
+        <activity
+            android:name=".ClusterMapActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:allowEmbedded="true"
+            android:resizeableActivity="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="app.leopard.cockpit.clustermap"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|keyboard|keyboardHidden|navigation" />
+
+        <!-- The helper hands over its connection here. Only the shell (or root) can call it:
+             normal apps can't hold this permission, and the caller is checked again in code. -->
+        <provider
+            android:name=".car.HelperBinderProvider"
+            android:authorities="app.leopard.cockpit.helper"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- Receives places from the driver's iPhone over the car's Wi-Fi. -->
+        <service
+            android:name=".nav.PhoneLinkService"
+            android:exported="false" />
+
+        <!-- Reads the navigation app's next turn (only navigation apps are read). -->
+        <service
+            android:name=".nav.NavListener"
+            android:exported="true"
+            android:label="Outo directions"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Reads Waze's or Google Maps' screen while they guide (only those apps; off unless switched on). -->
+        <service
+            android:name=".nav.MapScreenReader"
+            android:exported="true"
+            android:label="Outo map reader"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/map_screen_reader" />
+        </service>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

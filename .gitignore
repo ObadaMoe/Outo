@@ -1,0 +1,19 @@
+# Gradle and Android Studio
+.gradle/
+.kotlin/
+build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Built apps (attached to GitHub releases instead)
+*.apk
+*.aab
+
+# Raw dumps from the car: device identifiers and network details
+car-probe/
+
+.DS_Store

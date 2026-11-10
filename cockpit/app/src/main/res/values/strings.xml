@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Outo</string>
+    <string name="map_reader_description">Reads the next turn, the time left and the distance left from Waze or Google Maps while they guide, for Outo\'s Overview, HUD and driver cluster. Outo reads no other app.</string>
+</resources>
