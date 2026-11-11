@@ -54,6 +54,8 @@ internal object Vehicle {
         "limitCar" to "ADAS_SLA_OUTPUT_SPEED_LIMIT",
         "limitSign" to "INSTRUMENT_TRAFFIC_SIGN_IDENTIFY_VALUE",
         "limitSource" to "ADAS_SLA_STATE",
+        // The car's own "navigation fusion" switch (meaning of its values unknown).
+        "navFusion" to "SET_NAVIGATION_FUSION_SWITCH",
     )
 
     /**
@@ -146,6 +148,32 @@ internal object Vehicle {
         val feature = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds").getField("SETTING_SPEED_LIMIT_SET").getInt(null)
         return setValue("setting.BYDAutoSettingDevice", feature, "intValue", kmh)
     }
+
+    /**
+     * Tells the car's front camera that a map is guiding, or that it stopped, as BYD's
+     * map does when its guidance starts and ends: the camera's navigation state (2 while
+     * guiding), the map's supplier (3, what BYD's map in this car sends) and the zone
+     * code (1). A camera that hears no map guiding takes no map's limit, only its own
+     * signs. Returns the car's answers, in that order.
+     */
+    fun setNavigating(on: Boolean): String {
+        val steps = if (on) {
+            listOf(NAV_STATE to 2, NAV_SUPPLIER to 3, NAV_ZONE to 1)
+        } else {
+            // BYD's map, at the end: supplier, zone, then the state.
+            listOf(NAV_SUPPLIER to 0, NAV_ZONE to 0, NAV_STATE to 0)
+        }
+        return steps.joinToString(" ") { (name, v) ->
+            val id = featureId(name) ?: return@joinToString "${name.lowercase()}=unknown"
+            val out = runCatching { setValue("setting.BYDAutoSettingDevice", id, "intValue", v) }
+                .getOrElse { "error ${(it.cause ?: it).javaClass.simpleName}" }
+            "$v:$out"
+        }
+    }
+
+    private const val NAV_STATE = "SETTING_MPC_IFC_NAVI_ST_SET"
+    private const val NAV_SUPPLIER = "SETTING_NAVI_CORP_SET"
+    private const val NAV_ZONE = "SETTING_MPC_ZONE_CODE_SET"
 
     /** One value through the car's own device API ([device] under android.hardware.bydauto), as BYD's map sets it. */
     private fun setValue(device: String, feature: Int, field: String, v: Any): String {

@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 9
+    const val VERSION = 10
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -228,8 +228,7 @@ internal class HelperService : IOtilityHelper.Stub() {
         }
         if (limitSent) {
             limitSent = false
-            SpeedLimits.sending = 0
-            runCatching { Vehicle.setSpeedLimit(0) }
+            SpeedLimits.clear()
         }
     }
 
@@ -807,10 +806,8 @@ internal class HelperService : IOtilityHelper.Stub() {
         check()
         require(kmh in 0..Instrument.SPEED_LIMIT_MAX) { "not a speed limit: $kmh" }
         limitSent = kmh > 0
-        // Sent again every second from now on (see SpeedLimits).
-        SpeedLimits.sending = kmh
-        return runCatching { Vehicle.setSpeedLimit(kmh) }
-            .getOrElse { "error: ${(it.cause ?: it).javaClass.simpleName}: ${(it.cause ?: it).message}" }
+        // Sent again every second from now on, with the camera told a map is guiding (see SpeedLimits).
+        return SpeedLimits.set(kmh)
     }
 
     override fun instrumentGet(device: Int, feature: Int): Int {
