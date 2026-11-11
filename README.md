@@ -18,6 +18,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
     - Now Playing, Engine Sound, Energy, Navigation;
     - Drive, Climate, Tyres, Screens now, Last 7 days.
   - Tap the map to open it large. Hold any widget to move it, resize it or remove it.
+  - When that map is on the driver cluster, the Overview takes it from there while it's open, all of it at the widget's size, and the cluster shows BYD's own view until you leave the Overview.
 - **Screens:**
   - The car's three displays, drawn on a picture of the dashboard.
   - Drag apps from the sidebar onto a display, or split the main screen in two. You can swap the halves or drag the divider to resize them.

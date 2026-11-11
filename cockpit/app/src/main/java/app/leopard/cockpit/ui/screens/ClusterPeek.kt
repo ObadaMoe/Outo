@@ -74,9 +74,10 @@ fun ClusterPeek(app: AppId, onClose: () -> Unit, onMain: () -> Unit, onOut: () -
         onStopOrDispose { onScreen = false }
     }
     val lent = onScreen && clusterMap?.app == app
+    val lender = remember { Any() }
     DisposableEffect(lent) {
-        if (lent) otility.screens.lendClusterMap(true)
-        onDispose { if (lent) otility.screens.lendClusterMap(false) }
+        if (lent) otility.screens.lendClusterMap(lender, true)
+        onDispose { if (lent) otility.screens.lendClusterMap(lender, false) }
     }
 
     // Back at the top of the sidebar, and the open tab's button, close it.

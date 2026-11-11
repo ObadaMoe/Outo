@@ -29,9 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -65,13 +63,11 @@ import app.leopard.cockpit.ui.LocalNav
 import app.leopard.cockpit.ui.Txt
 import app.leopard.cockpit.ui.screens.AppPoster
 import app.leopard.cockpit.ui.screens.HostSurface
-import app.leopard.cockpit.ui.screens.MirrorSurface
 import app.leopard.cockpit.ui.screens.TouchRouter
 import app.leopard.cockpit.ui.screens.routeTouches
 import app.leopard.cockpit.ui.screens.TouchTarget
 import app.leopard.cockpit.ui.theme.LocalTokens
 import app.leopard.cockpit.ui.theme.T
-import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -79,7 +75,8 @@ import kotlin.math.roundToInt
  * The map widget, like CarPlay's dashboard: the map app used last, live, in the
  * pane beside the other widgets ([pane], in the Overview's pixels). Tap it and it grows to
  * fill the screen ([full]) and takes touches, with Back to come out again.
- * Hold it (or tap it while the widgets shake) for its menu.
+ * Hold it (or tap it while the widgets shake) for its menu. A map on the driver cluster
+ * comes off it while the Overview is open, and goes back when it closes.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -106,7 +103,7 @@ fun MapWidget(
     val helper by HelperConnection.helper.collectAsState()
     var expanded by remember { mutableStateOf(false) }
     // The map on the driver cluster (the switch in Screens) runs in a display of its
-    // own, which the cluster's window shows: here it's a copy of that display.
+    // own, which the cluster's window shows; while the Overview is open, it's here instead.
     val clusterMap by otility.screens.clusterMap.collectAsState()
     val pkg = remember(apps, last, settings.navApp, clusterMap?.app) { otility.navigator.mapApp() }
     val id = pkg?.let { AppId(it) }
@@ -118,27 +115,20 @@ fun MapWidget(
         onScreen = true
         onStopOrDispose { onScreen = false }
     }
-    val hidden by produceState<Int?>(null, mirrored, id) {
-        value = null
-        // It comes a moment after the map goes on the cluster, and again after the helper restarts.
-        while (mirrored && id != null) {
-            value = otility.screens.hosts.displayOf(id)
-            delay(500)
-        }
-    }
     // On the passenger screen it's the car's to show: going there instead of pulling
     // it off that screen (and on the cluster before it's framed there).
     val elsewhere = id?.takeIf { !mirrored }?.let { screens.screenOf(it) }?.takeIf { it != ScreenId.MAIN }
     val live = info != null && elsewhere == null
-    // Opened up, the cluster's map is all here, at this size (Waze's search and buttons
-    // too), not the cluster's cut of it; the cluster shows BYD's own view meanwhile, and
-    // has the map back once it closes.
-    val lent = mirrored && expanded && live && onScreen
+    // While the Overview is open, the cluster's map is here, all of it, at the card's size
+    // or opened up (Waze's search and buttons too), not a copy of the cluster's cut of it.
+    // The cluster shows BYD's own view meanwhile, and has the map back once the Overview
+    // closes (another tab, or Otility leaves the screen).
+    val lent = mirrored && live && onScreen
+    val lender = remember { Any() }
     DisposableEffect(lent) {
-        if (lent) otility.screens.lendClusterMap(true)
-        onDispose { if (lent) otility.screens.lendClusterMap(false) }
+        if (lent) otility.screens.lendClusterMap(lender, true)
+        onDispose { if (lent) otility.screens.lendClusterMap(lender, false) }
     }
-    val frame = clusterMap?.frame?.takeIf { mirrored && !lent }
 
     val p = progress
     LaunchedEffect(expanded) { p.animateTo(if (expanded) 1f else 0f, spring(1f, 280f)) }
@@ -227,14 +217,8 @@ fun MapWidget(
                 when {
                     info == null -> Message(null, "No map app", "Install Waze or Google Maps to see the map here.")
                     elsewhere != null -> Message(info, "${info.label} is on the ${elsewhere.label.lowercase()} screen", "Tap to go to it.")
-                    frame != null -> {
-                        AppPoster(info)
-                        val d = hidden
-                        if (d != null) key(d) {
-                            // Its whole display, covering the pane (the cluster shows only the middle of it).
-                            MirrorSurface(d, frame.width, frame.height, Modifier.cover(frame.width, frame.height))
-                        }
-                    }
+                    // Off the screen, the cluster keeps it: nothing to show here meanwhile.
+                    mirrored && !lent -> AppPoster(info)
                     else -> {
                         // The app's icon until its picture arrives (or while the car isn't connected).
                         AppPoster(info)
@@ -269,7 +253,7 @@ fun MapWidget(
                 )
             }
             router.gestures = settings.gestures
-            // (The cluster's map too: opened up, it's here at this size; see [lent].)
+            // (The cluster's map too: on the Overview it's here; see [lent].)
             router.targets = listOf(TouchTarget(Rect(0f, 0f, open.width, open.height), { hosts.displayOf(id!!) }, { appW }, { appH }))
             Box(
                 Modifier

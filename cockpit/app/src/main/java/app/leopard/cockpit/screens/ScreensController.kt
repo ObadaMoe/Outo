@@ -77,9 +77,11 @@ class ScreensController(
 
     // ---- BYD's own view on the cluster, for a while ------------------------------
 
-    /** The cluster's map is opened up on the main screen, full size (see [lendClusterMap]). */
+    /** The cluster's map is on the main screen: on the Overview, or opened up over Screens (see [lendClusterMap]). */
     var clusterMapLent = false
         private set
+    /** Who has the cluster's map now (see [lendClusterMap]). */
+    private val lenders = mutableSetOf<Any>()
     /** A turn signal is on: BYD shows its blind-spot camera on the cluster (see [setSignalling]). */
     private var signalling = false
     /** The cluster shows BYD's own view now, for one of those, instead of the map. */
@@ -91,9 +93,15 @@ class ScreensController(
      * screen's size, all of it (Waze's search and buttons too), and the cluster shows
      * BYD's own view meanwhile rather than a still picture. Given back, the cluster's
      * window takes it again at the cluster's size, and the cluster shows it.
+     *
+     * More than one view can borrow it at once (the Overview's map fading out as the
+     * cluster's map opens over Screens, say): it goes back once the last one ([by])
+     * gives it back.
      */
-    fun lendClusterMap(lent: Boolean) {
-        if (clusterMapLent == lent) return
+    fun lendClusterMap(by: Any, take: Boolean) {
+        val changed = if (take) lenders.add(by) else lenders.remove(by)
+        val lent = lenders.isNotEmpty()
+        if (!changed || clusterMapLent == lent) return
         clusterMapLent = lent
         Log.i(CarBridge.TAG, if (lent) "the cluster's map is on the main screen" else "the cluster's map is back")
         // A new [ClusterMap.epoch]: its window makes a new view, which takes the app back.
