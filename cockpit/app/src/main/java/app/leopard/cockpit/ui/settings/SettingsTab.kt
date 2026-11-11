@@ -540,11 +540,30 @@ private fun SoundPage() {
             Slider(s.soundVolume, { v -> update { it.copy(soundVolume = v) } }, Modifier.width(280.dp))
         }
         Separator()
-        Toggle("Only in D, R or S", s.soundOnlyDriving) { st, v -> st.copy(soundOnlyDriving = v) }
+        Toggle("Only in D, R or S", s.soundOnlyDriving, "Off: it plays in P and N too, where the pedal revs it all the way") { st, v -> st.copy(soundOnlyDriving = v) }
         Separator()
         Toggle("Exterior speaker", s.soundOutside) { st, v -> st.copy(soundOutside = v) }
+        PedalRow()
     }
     GlassPillButton("Open Sound Studio", { nav.sheet = SheetKind.SOUND_STUDIO }, icon = Icons.sound, filled = true)
+}
+
+/**
+ * The pedal as the engine sound reads it, live: to check, parked, that a full press
+ * reaches 100%. The car doesn't say its pedal's scale; Outo learns it (see VehicleFeed).
+ */
+@Composable
+private fun PedalRow() {
+    val v by Otility.instance.vehicle.data.collectAsState()
+    val raw = v.pedalRaw ?: return
+    Separator()
+    SettingRow(
+        "Pedal",
+        subtitle = if (v.pedalTop > 0) "The car reports $raw; a full press reads ${maxOf(v.pedalTop, 100)}"
+        else "Press it all the way once so Outo learns how far it goes",
+    ) {
+        Txt("${((v.pedal ?: 0f) * 100).roundToInt()}%", T.callout, LocalTokens.current.text2)
+    }
 }
 
 @Composable

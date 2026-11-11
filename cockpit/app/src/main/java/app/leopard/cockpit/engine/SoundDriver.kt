@@ -62,7 +62,7 @@ class SoundDriver(
             synth.external = true
             val pedal = v.pedal ?: 0f
             synth.pedal = pedal
-            synth.externalRpm = virtualRpm(synth.spec, (v.speedKmh ?: 0).toFloat(), pedal)
+            synth.externalRpm = virtualRpm(synth.spec, (v.speedKmh ?: 0).toFloat(), pedal, parked = v.gear == "P" || v.gear == "N")
             if (!synth.isPlaying) synth.start()
             live = true
         } else if (live) {
@@ -78,13 +78,17 @@ class SoundDriver(
         }
     }
 
-    /** Engine revs for a road speed, with gear changes that follow the pedal. */
-    private fun virtualRpm(spec: EngineSpec, speedKmh: Float, pedal: Float): Float {
+    /**
+     * Engine revs for a road speed, with gear changes that follow the pedal. [parked]:
+     * in P or N, where the pedal revs it all the way, as a real engine out of gear does.
+     */
+    private fun virtualRpm(spec: EngineSpec, speedKmh: Float, pedal: Float, parked: Boolean): Float {
         val idle = spec.idleRpm.toFloat()
         val red = spec.redlineRpm.toFloat()
         if (speedKmh < 3f) {
             gear = 1
-            return idle + pedal * (red - idle) * 0.35f
+            // In gear and still (on the brake, or just pulling away): a little, as a clutch would.
+            return idle + pedal * (red - idle) * (if (parked) 0.97f else 0.35f)
         }
         val n = spec.gears
         fun ratio(g: Int) = 3.6f * (0.72f / 3.6f).pow((g - 1) / (n - 1f))

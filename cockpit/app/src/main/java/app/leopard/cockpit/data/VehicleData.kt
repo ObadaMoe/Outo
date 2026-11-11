@@ -14,12 +14,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.LocalDate
+import kotlin.math.max
 
 /**
  * Car values as the helper reports them, scaled to everyday units. Anything the
  * car didn't report is null, and the UI shows a dash instead of a number.
  */
-data class VehicleData(val raw: Map<String, Int> = emptyMap()) {
+data class VehicleData(val raw: Map<String, Int> = emptyMap(), val pedalTop: Int = 0) {
     private fun i(key: String): Int? = raw[key]
 
     val isEmpty: Boolean get() = raw.isEmpty()
@@ -51,8 +52,14 @@ data class VehicleData(val raw: Map<String, Int> = emptyMap()) {
     }
     val moving: Boolean get() = gear in setOf("R", "D", "S")
 
-    /** Accelerator pedal, 0..1. */
-    val pedal: Float? get() = i("pedal")?.let { (if (it > 100) it / 1000f else it / 100f).coerceIn(0f, 1f) }
+    /** The accelerator pedal as the car reports it. Its scale isn't documented: see [pedalTop]. */
+    val pedalRaw: Int? get() = i("pedal")?.takeIf { it >= 0 }
+
+    /**
+     * Accelerator pedal, 0..1: the car's value over [pedalTop], the most it has reported
+     * (held for a moment) on a full press, at least 100.
+     */
+    val pedal: Float? get() = pedalRaw?.let { (it.toFloat() / max(pedalTop, 100)).coerceIn(0f, 1f) }
 
     /** Last trip's electricity use, kWh per 100 km. */
     val lastTripKwh: Float? get() = i("lastElec")?.takeIf { it in 1..1000 }?.let { it * 0.1f }
@@ -109,7 +116,9 @@ class VehicleFeed(context: Context, private val bridge: CarBridge) {
                 val o = bridge.vehicle()
                 if (o != null) {
                     lastRead = SystemClock.elapsedRealtime()
-                    val v = VehicleData.parse(o)
+                    val parsed = VehicleData.parse(o)
+                    learnPedal(parsed.pedalRaw)
+                    val v = parsed.copy(pedalTop = pedalTop)
                     _data.value = v
                     val now = System.currentTimeMillis()
                     if (now - lastLog > 60_000) {
@@ -123,6 +132,27 @@ class VehicleFeed(context: Context, private val bridge: CarBridge) {
                 }
                 delay(if (fast) 100 else 1000)
             }
+        }
+    }
+
+    /**
+     * The most the car's pedal value has reached: its full press. The car doesn't say
+     * its scale (0–100 on some, more on others), so Outo learns it from the hardest
+     * press it sees, kept from then on. Only a value held for three reads in a row
+     * counts, so a glitch can't set it.
+     */
+    private var pedalTop = sp.getInt(PEDAL_TOP, 0)
+    private val pedalRecent = ArrayDeque<Int>()
+
+    private fun learnPedal(raw: Int?) {
+        if (raw == null || raw > 10_000) { pedalRecent.clear(); return }
+        pedalRecent.addLast(raw)
+        while (pedalRecent.size > 3) pedalRecent.removeFirst()
+        if (pedalRecent.size < 3) return
+        val held = pedalRecent.min()
+        if (held > pedalTop) {
+            pedalTop = held
+            sp.edit().putInt(PEDAL_TOP, held).apply()
         }
     }
 
@@ -142,5 +172,9 @@ class VehicleFeed(context: Context, private val bridge: CarBridge) {
             val last = sp.getFloat("last_$d", -1f)
             d to if (first < 0 || last < first) 0f else last - first
         }
+    }
+
+    private companion object {
+        const val PEDAL_TOP = "pedal_top"
     }
 }
