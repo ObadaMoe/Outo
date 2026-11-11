@@ -9,7 +9,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
 ## What it does
 
 - **Sidebar:** down the left side on every tab, as in CarPlay.
-  - Your pinned apps: tap one to open it full screen on the main screen, zoomed in. Pin an app by holding it in Apps and dragging it onto the sidebar; drag one along the sidebar to move it, or hold it to remove it.
+  - Your pinned apps: tap one to open it full screen on the main screen, zoomed in. From the Overview, Apps or Settings, the app grows out of its icon. Pin an app by holding it in Apps and dragging it onto the sidebar; drag one along the sidebar to move it, or hold it to remove it.
   - Settings at the top; Apps, Screens and the Overview's Home square at the bottom. The open one's icon turns blue.
   - Zoomed into a screen, it steps aside; two fingers up or the dots at the top bring it back.
   - When Outo isn't connected to the car, a red note at the top says so; tap it to connect.
@@ -24,6 +24,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - Drag apps from the sidebar onto a display, or split the main screen in two. You can swap the halves or drag the divider to resize them.
   - Tap a display to zoom in and use its apps; tap Screens on the sidebar, press the car's Back or swipe down with two fingers to zoom out. The controls hide after a few seconds; tap the dots at the top to bring them back.
   - Zoomed in, swipe two fingers left or right to move between the displays, the way pages turn. From the main screen, two fingers right open the driver cluster's map over it at full size, to pick a place, while the main screen's app keeps playing; two fingers left put the map back on the cluster.
+  - When an app goes full screen on the main screen (a YouTube video, say), BYD's status bar and buttons step aside too; swipe in from the top or bottom edge to bring them back for a moment.
   - Save layouts, and choose what each display opens with at startup.
 - **Apps:**
   - Every app in the car, with search.
@@ -33,7 +34,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - On the driver cluster, Waze and Google Maps show only their map, without their own buttons and cards (**Settings › Driver Cluster › Map only**). The app runs on a hidden display wider than the cluster, and the cluster shows the part that is only map.
   - Places sent from an iPhone, over the car's Wi-Fi or the iPhone's hotspot, open in your map app.
 - **Engine sound:** a synthesized engine that follows the car's pedal and speed. It comes with a garage of engine presets and a Sound Studio for tuning them.
-- **Settings:** light, dark or automatic appearance, accent colour and glass style. There are also pages for the screens and sidebar, the driver cluster, navigation, startup and the car connection.
+- **Settings:** laid out like Apple's System Settings: one panel beside the sidebar, the pages on a card of their own, and each page's groups on cards raised off the panel. Light, dark or automatic appearance, accent colour and glass style; there are also pages for the screens and sidebar, the driver cluster, navigation, engine sound, startup, the car connection and integrations.
 
 ## How it works
 

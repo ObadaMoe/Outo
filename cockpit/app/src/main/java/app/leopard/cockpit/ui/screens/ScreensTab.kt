@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -122,6 +123,8 @@ import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlin.math.max
 import kotlin.math.min
 
@@ -186,7 +189,34 @@ fun ScreensTab() {
 
     fun dp(v: Float) = v * density.density
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+    // An app opened from another tab (see Nav.launchFrom): the tab opens zoomed in on it,
+    // the app growing out of its icon ([launchOrigin]) instead of the camera flying in from
+    // the dashboard. Only when the app was opened at once (not after a question).
+    val launchOrigin = remember { nav.launchFrom.also { nav.launchFrom = null } }
+    val launchFocus = remember { nav.zoomRequest?.takeIf { launchOrigin != null } }
+    val launch = remember { Animatable(if (launchFocus != null) 0f else 1f) }
+    LaunchedEffect(Unit) { if (launch.value < 1f) launch.animateTo(1f, spring(dampingRatio = 1f, stiffness = 260f)) }
+    val launching by remember { derivedStateOf { launch.value < 1f } }
+
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            // An app opened from another tab grows out of its icon (see launchFrom below).
+            .graphicsLayer {
+                val from = launchOrigin
+                val p = launch.value
+                if (from != null && launchFocus != null && p < 1f) {
+                    val sc = 0.06f + 0.94f * p
+                    scaleX = sc; scaleY = sc
+                    val at = if (from.isSpecified) from else Offset(size.width / 2f, size.height / 2f)
+                    transformOrigin = TransformOrigin((at.x / size.width).coerceIn(0f, 1f), (at.y / size.height).coerceIn(0f, 1f))
+                    // Corners as round as an icon's at first, square once it fills the screen.
+                    shape = RoundedCornerShape((1f - p) * 36.dp.toPx() / sc)
+                    clip = true
+                }
+            }
+            .background(Color.Black),
+    ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         val driverDisplay = snapshot?.displayFor(ScreenId.DRIVER)
@@ -208,7 +238,8 @@ fun ScreensTab() {
         val geo = remember(w, h, aspects, mainBars, photoLeft, pad) { StageGeometry(w, h, aspects, mainBars, photoLeft, pad) }
 
         // ---- The camera ------------------------------------------------------
-        var focus by remember { mutableStateOf<ScreenId?>(null) }
+        // Opened from another tab: already zoomed in (see launchFocus above).
+        var focus by remember { mutableStateOf(launchFocus) }
         // The picked map tapped again: opened up over the main screen (or shown there, if it's there).
         val peekMap: (String) -> Unit = { pkg -> controller.peekClusterMap(AppId(pkg)) { focus = it } }
         val peek by controller.peek.collectAsState()
@@ -233,9 +264,27 @@ fun ScreensTab() {
             if (onMain) controller.setMainZoomed(true)
             onDispose { if (onMain) controller.setMainZoomed(false) }
         }
+        // Zoomed into one app on the main screen: when it goes full screen (a YouTube
+        // video, say), BYD's bars go too (see Nav.appFullscreen). Its hidden display has no
+        // bars, so the helper reads the app's wish from Android's account of its windows.
+        val fullApp = (state[ScreenId.MAIN] as? ScreenContent.Single)?.app?.takeIf { onMain && peek == null }
+        LaunchedEffect(fullApp, helper) {
+            val h = helper
+            val app = fullApp
+            if (h == null || app == null) { nav.appFullscreen = false; return@LaunchedEffect }
+            while (true) {
+                val display = controller.hosts.displayOf(app)
+                val hides = display != null && withContext(Dispatchers.IO) {
+                    runCatching { h.hidesBars(app.pkg, display) }.getOrDefault(false)
+                }
+                nav.appFullscreen = hides
+                delay(700)
+            }
+        }
+        DisposableEffect(Unit) { onDispose { nav.appFullscreen = false } }
         val progress = remember { Animatable(1f) }
-        var camFrom by remember { mutableStateOf(geo.identity) }
-        var camTo by remember { mutableStateOf(geo.identity) }
+        var camFrom by remember { mutableStateOf(focus?.let { geo.zoomOn(it) } ?: geo.identity) }
+        var camTo by remember { mutableStateOf(camFrom) }
         val camera: () -> Camera = { between(camFrom, camTo, progress.value) }
         val camTarget = focus?.let { geo.zoomOn(it) } ?: geo.identity
         LaunchedEffect(focus, geo) {
@@ -302,9 +351,11 @@ fun ScreensTab() {
         val alert by Alerts.current.collectAsState()
         val covered = menu != null || drag.app != null || startupOpen || nav.sheet != null || alert != null || pip != null
         var direct by remember { mutableStateOf(false) }
-        LaunchedEffect(settled, focus, connected, covered, previews) {
+        LaunchedEffect(settled, focus, connected, covered, previews, launching) {
             direct = when {
                 !connected -> false
+                // Growing out of its icon: drawn in Otility's window, where the growth applies.
+                launching -> false
                 focus == null && covered -> false
                 !settled -> direct
                 else -> focus != null || previews

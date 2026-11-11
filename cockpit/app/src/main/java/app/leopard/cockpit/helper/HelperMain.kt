@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 10
+    const val VERSION = 12
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -211,6 +211,17 @@ internal class HelperService : IOtilityHelper.Stub() {
         if (kept.isNotEmpty()) keptAt = SystemClock.uptimeMillis()
         mirrors.values.forEach { runCatching { it.close() } }
         mirrors.clear()
+        // Otility gone with a finger down on an app: the app has it lifted (cancelled), or
+        // it stays held on the kept display (YouTube's video at 2x, say).
+        synchronized(pressing) {
+            for ((display, last) in pressing) {
+                val cancel = last.toCancel()
+                runCatching { Hidden.inject(cancel, display) }
+                cancel.recycle(); last.recycle()
+            }
+            if (pressing.isNotEmpty()) Log.i(HelperMain.TAG, "touches ended on displays ${pressing.keys}")
+            pressing.clear()
+        }
         // What Otility set in the car itself stays set without it: the engine sound on
         // the outside speaker, and the last turn and distance on the cluster. Undo both;
         // the next Otility sets them again if it wants them.
@@ -668,8 +679,18 @@ internal class HelperService : IOtilityHelper.Stub() {
         if (Binder.getCallingUid() != appUid) return
         Hidden.unobscure(event)
         runCatching { Hidden.inject(event, displayId) }.onFailure(::injectFailed)
+        synchronized(pressing) {
+            val last = when (event.actionMasked) {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> null
+                else -> MotionEvent.obtain(event)
+            }
+            (if (last == null) pressing.remove(displayId) else pressing.put(displayId, last))?.recycle()
+        }
         event.recycle()
     }
+
+    /** Each display's touch going on (a finger down that hasn't come up): the last event of it sent. */
+    private val pressing = HashMap<Int, MotionEvent>()
 
     @Volatile private var injectLogged = false
 
@@ -722,6 +743,14 @@ internal class HelperService : IOtilityHelper.Stub() {
             return true
         }
         return false
+    }
+
+    override fun hidesBars(pkg: String, displayId: Int): Boolean {
+        check()
+        require(PACKAGE.matches(pkg)) { "not a package: $pkg" }
+        // Only that app's windows: a few kilobytes, where all of them would be far more.
+        val out = exec(listOf("dumpsys", "window", pkg), timeoutS = 3)
+        return !out.startsWith("error") && WindowBars.hides(out, pkg, displayId)
     }
 
     override fun installUpdate(apk: ParcelFileDescriptor): String {
@@ -839,6 +868,8 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     private companion object {
         const val EXEC_TIMEOUT_S = 10L
+        /** A package name, so nothing else reaches dumpsys's arguments. */
+        val PACKAGE = Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")
         /** Installing a 20 MB update can take a while on a busy car. */
         const val INSTALL_TIMEOUT_S = 180L
         /** Where an update waits while it's installed (the shell can read it here; Outo's own files it can't). */

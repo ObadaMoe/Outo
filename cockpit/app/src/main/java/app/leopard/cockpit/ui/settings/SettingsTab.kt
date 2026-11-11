@@ -1,6 +1,10 @@
 package app.leopard.cockpit.ui.settings
 
 import androidx.compose.runtime.getValue
+import app.leopard.cockpit.ui.raisedCard
+import app.leopard.cockpit.ui.LocalRaisedGroups
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.setValue
 import android.content.Context
 import android.content.Intent
@@ -53,6 +57,8 @@ import app.leopard.cockpit.data.SoundMode
 import app.leopard.cockpit.data.Tab
 import app.leopard.cockpit.engine.Garage
 import app.leopard.cockpit.ui.SideInset
+import app.leopard.cockpit.ui.SidebarCorner
+import app.leopard.cockpit.ui.SidebarMargin
 import app.leopard.cockpit.ui.GlassKind
 import app.leopard.cockpit.ui.GlassPillButton
 import app.leopard.cockpit.ui.Glyph
@@ -90,50 +96,65 @@ import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-enum class SettingsPage(val title: String, val icon: ImageVector, val color: Color) {
-    DISPLAY("Display", Icons.display, Color(0xFF0A84FF)),
-    SCREENS("Screens & Sidebar", Icons.screens, Color(0xFF5E5CE6)),
-    CLUSTER("Driver Cluster", Icons.gauge, Color(0xFFFF9F0A)),
-    NAVIGATION("Navigation", Icons.navigation, Color(0xFF30D158)),
-    SOUND("Engine Sound", Icons.sound, Color(0xFFFF375F)),
-    STARTUP("Startup", Icons.startup, Color(0xFF32ADE6)),
-    CONNECTION("Car Connection", Icons.link, Color(0xFF8E8E93)),
-    INTEGRATIONS("Integrations", Icons.apps, Color(0xFFBF5AF2)),
-    ABOUT("About", Icons.info, Color(0xFF636366)),
+enum class SettingsPage(val title: String, val icon: ImageVector, val color: Color, val about: String) {
+    DISPLAY("Display", Icons.display, Color(0xFF0A84FF), "Light or dark, the accent colour, the glass and the emblem on idle screens."),
+    SCREENS("Screens & Sidebar", Icons.screens, Color(0xFF5E5CE6), "The car's screens, the gestures when zoomed in, and the sidebar."),
+    CLUSTER("Driver Cluster", Icons.gauge, Color(0xFFFF9F0A), "What the driver cluster shows, and how Outo sends it there."),
+    NAVIGATION("Navigation", Icons.navigation, Color(0xFF30D158), "Your map app, places from your phone, directions on the cluster and the HUD."),
+    SOUND("Engine Sound", Icons.sound, Color(0xFFFF375F), "The engine you hear: the car, its mode and volume, and when it plays."),
+    STARTUP("Startup", Icons.startup, Color(0xFF32ADE6), "Opening with the car, the tab Outo opens on, and the last layout."),
+    CONNECTION("Car Connection", Icons.link, Color(0xFF8E8E93), "Outo's link to the car, and what the car reports."),
+    INTEGRATIONS("Integrations", Icons.apps, Color(0xFFBF5AF2), "The apps Outo knows best, and your phone."),
+    ABOUT("About", Icons.info, Color(0xFF636366), "The version and updates, and what Outo is built with."),
 }
 
+/**
+ * Settings, as in Apple's System Settings: one panel, with the pages listed on a
+ * rounded card raised off its left side, under the "Settings" title (the open one
+ * filled with the accent), and the open page beside them: a header card, then its
+ * groups as cards raised off the panel too.
+ */
 @Composable
 fun SettingsTab() {
     val nav = LocalNav.current
     val t = LocalTokens.current
+    val panel = rounded(SidebarCorner)
     CabinBackground {
         Row(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(start = SideInset, end = 28.dp, top = 20.dp, bottom = 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                // Top and bottom with the sidebar, and as close to the right edge.
+                .padding(start = SideInset, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin)
+                .glass(panel, GlassKind.Card)
+                .clip(panel),
         ) {
-            Column(Modifier.width(300.dp).fillMaxHeight()) {
-                Txt("Settings", T.largeTitle)
+            // ---- The pages: a card of their own, inset from the panel's edge and rounded with it ----
+            Column(
+                Modifier
+                    .padding(start = PagesInset, top = PagesInset, bottom = PagesInset)
+                    .width(290.dp)
+                    .fillMaxHeight()
+                    .raisedCard(rounded(SidebarCorner - PagesInset)),
+            ) {
+                Txt("Settings", T.largeTitle, modifier = Modifier.padding(start = 22.dp, top = 20.dp, bottom = 12.dp))
                 val update by Otility.instance.updater.state.collectAsState()
                 val updateReady = update is UpdateState.Available
-                Spacer(Modifier.height(14.dp))
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .glass(rounded(26.dp), GlassKind.Card)
-                        .clip(rounded(26.dp))
+                        .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(8.dp),
+                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     SettingsPage.entries.forEach { page ->
                         val on = nav.settingsPage == page
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clip(rounded(16.dp))
-                                .background(if (on) t.sel else Color.Transparent)
+                                .clip(rounded(12.dp))
+                                .background(if (on) t.fill else Color.Transparent)
                                 .clickable { nav.settingsPage = page }
                                 .padding(horizontal = 10.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -142,41 +163,63 @@ fun SettingsTab() {
                                 Glyph(page.icon, Color.White, size = 18.dp)
                             }
                             Spacer(Modifier.width(12.dp))
-                            Txt(page.title, T.callout.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal))
+                            Txt(page.title, T.callout.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal), if (on) t.onFill else t.text)
                             if (page == SettingsPage.ABOUT && updateReady) {
                                 Spacer(Modifier.weight(1f))
-                                Box(Modifier.size(10.dp).background(t.destructive, CircleShape))
+                                Box(Modifier.size(10.dp).background(if (on) t.onFill else t.destructive, CircleShape))
                             }
                         }
                     }
                 }
             }
+            // ---- The open page ----
             // A scroll position per page: another page opens at its top, not half-way down.
             val pageScroll = key(nav.settingsPage) { rememberScrollState() }
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .glass(rounded(30.dp), GlassKind.Card)
-                    .clip(rounded(30.dp))
                     .verticalScroll(pageScroll)
-                    .padding(24.dp),
+                    .padding(horizontal = 28.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
-                Txt(nav.settingsPage.title, T.title1)
-                when (nav.settingsPage) {
-                    SettingsPage.DISPLAY -> DisplayPage()
-                    SettingsPage.SCREENS -> ScreensPage()
-                    SettingsPage.CLUSTER -> ClusterPage()
-                    SettingsPage.NAVIGATION -> NavigationPage()
-                    SettingsPage.SOUND -> SoundPage()
-                    SettingsPage.STARTUP -> StartupPage()
-                    SettingsPage.CONNECTION -> ConnectionPage()
-                    SettingsPage.INTEGRATIONS -> IntegrationsPage()
-                    SettingsPage.ABOUT -> AboutPage()
+                PageHeader(nav.settingsPage)
+                CompositionLocalProvider(LocalRaisedGroups provides true) {
+                    when (nav.settingsPage) {
+                        SettingsPage.DISPLAY -> DisplayPage()
+                        SettingsPage.SCREENS -> ScreensPage()
+                        SettingsPage.CLUSTER -> ClusterPage()
+                        SettingsPage.NAVIGATION -> NavigationPage()
+                        SettingsPage.SOUND -> SoundPage()
+                        SettingsPage.STARTUP -> StartupPage()
+                        SettingsPage.CONNECTION -> ConnectionPage()
+                        SettingsPage.INTEGRATIONS -> IntegrationsPage()
+                        SettingsPage.ABOUT -> AboutPage()
+                    }
                 }
             }
         }
+    }
+}
+
+/** How far the pages' card keeps from the panel's edge. */
+private val PagesInset = 10.dp
+
+/** The open page's card at its top: its icon, its name and what's on it, as Apple's pages start. */
+@Composable
+private fun PageHeader(page: SettingsPage) {
+    val t = LocalTokens.current
+    Column(
+        Modifier.fillMaxWidth().raisedCard(rounded(22.dp)).padding(horizontal = 32.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(Modifier.size(52.dp).background(page.color, rounded(13.dp)), contentAlignment = Alignment.Center) {
+            Glyph(page.icon, Color.White, size = 30.dp)
+        }
+        Spacer(Modifier.height(2.dp))
+        Txt(page.title, T.title1)
+        Txt(page.about, T.subhead.copy(textAlign = TextAlign.Center), t.text2)
     }
 }
 

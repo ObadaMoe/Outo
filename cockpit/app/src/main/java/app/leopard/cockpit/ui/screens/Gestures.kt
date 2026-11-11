@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -23,6 +24,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import app.leopard.cockpit.car.CarBridge
+import app.leopard.cockpit.helper.toCancel
 import kotlinx.coroutines.CancellationException
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -120,6 +122,8 @@ fun Modifier.liftable(key: Any?, callbacks: LiftCallbacks): Modifier {
 @Composable
 fun Modifier.routeTouches(router: TouchRouter): Modifier {
     val view = LocalView.current
+    // Gone in the middle of a touch (zoomed out, say): the app has the touch ended too.
+    DisposableEffect(router) { onDispose { router.cancelPress() } }
     return pointerInteropFilter { ev ->
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) view.requestUnbufferedDispatch(ev)
         router.onTouch(ev)
@@ -146,7 +150,9 @@ class TouchTarget(
  *  - one finger in from the left edge: Back, inside the app
  *
  * Once a gesture is Otility's, the app gets a cancel, like when a system
- * gesture takes over.
+ * gesture takes over. So it does when Android takes the touch away from Otility
+ * (a swipe for BYD's bars, a pop-up over Otility), or the area goes mid-touch:
+ * otherwise a finger would stay down for the app, held (YouTube's video at 2x).
  */
 class TouchRouter(
     private val bridge: CarBridge,
@@ -168,10 +174,16 @@ class TouchRouter(
     private var startSpan = 0f
     private var startTime = 0L
     private var edge: MotionEvent? = null
+    /** The app's side of the touch going on: the last event it was sent, and where, while a finger is down for it. */
+    private var pressed: MotionEvent? = null
+    private var pressedOn = 0
 
     fun onTouch(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // The last touch never came to an end for the app: end it before this one starts.
+                edge?.recycle(); edge = null
+                cancelPress()
                 ours = false
                 multi = 0
                 val i = targets.indexOfFirst { it.rect.contains(Offset(ev.x, ev.y)) }
@@ -214,10 +226,10 @@ class TouchRouter(
                     val far = 70 * dp
                     if (spanChange < 60 * dp) {
                         if (abs(dy) > far && abs(dy) > abs(dx) * 1.4f) {
-                            takeOver(ev); if (dy < 0) onTwoUp() else onTwoDown(); return true
+                            takeOver(); if (dy < 0) onTwoUp() else onTwoDown(); return true
                         }
                         if (abs(dx) > far && abs(dx) > abs(dy) * 1.4f) {
-                            takeOver(ev); onTwoSide(if (dx < 0) -1 else 1); return true
+                            takeOver(); onTwoSide(if (dx < 0) -1 else 1); return true
                         }
                     }
                 }
@@ -229,8 +241,10 @@ class TouchRouter(
                 ours = false; multi = 0
             }
             MotionEvent.ACTION_CANCEL -> {
+                // Not passed on as it is: Compose's own cancel (when Android takes the touch
+                // away) names no device or touch screen, and an app doesn't take it as one.
                 edge?.recycle(); edge = null
-                if (!ours) forward(ev)
+                cancelPress()
                 ours = false; multi = 0
             }
             else -> if (!ours) forward(ev)
@@ -238,12 +252,27 @@ class TouchRouter(
         return true
     }
 
-    private fun takeOver(ev: MotionEvent) {
+    private fun takeOver() {
         ours = true
-        val cancel = MotionEvent.obtain(ev)
-        cancel.action = MotionEvent.ACTION_CANCEL
-        forward(cancel)
+        cancelPress()
+    }
+
+    /** Ends, for the app, the touch it has going on (if any) with a cancel, as from the system. */
+    fun cancelPress() {
+        val last = pressed ?: return
+        val cancel = last.toCancel()
+        send(cancel, pressedOn)
         cancel.recycle()
+    }
+
+    /** Passes an event in the app's pixels to its display, and keeps track of the touch. */
+    private fun send(e: MotionEvent, display: Int) {
+        bridge.inject(e, display)
+        pressed?.recycle()
+        pressed = when (e.actionMasked) {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> null
+            else -> MotionEvent.obtain(e).also { pressedOn = display }
+        }
     }
 
     private fun flushEdge() {
@@ -264,7 +293,7 @@ class TouchRouter(
         m.postTranslate(t.left, t.top)
         val e = MotionEvent.obtain(ev)
         e.transform(m)
-        bridge.inject(e, id)
+        send(e, id)
         e.recycle()
     }
 

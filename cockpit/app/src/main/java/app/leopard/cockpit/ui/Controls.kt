@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
@@ -275,17 +277,40 @@ fun Slider(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Modifie
     }
 }
 
-/** A rounded group of rows, like an iOS inset list. */
+/**
+ * Groups drawn as cards raised off the surface they're on, with a soft shadow, as in
+ * Apple's System Settings (Settings' pages); otherwise sunk into it, like an iOS inset list.
+ */
+val LocalRaisedGroups = staticCompositionLocalOf { false }
+
+/** A rounded group of rows, like an iOS inset list (raised: see [LocalRaisedGroups]). */
 @Composable
 fun Group(modifier: Modifier = Modifier, header: String? = null, footer: String? = null, content: @Composable () -> Unit) {
     val t = LocalTokens.current
+    val shape = rounded(18.dp)
     androidx.compose.foundation.layout.Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (header != null) Txt(header.uppercase(), T.sectionHeader, t.text2, Modifier.padding(start = 6.dp))
         androidx.compose.foundation.layout.Column(
-            Modifier.fillMaxWidth().clip(rounded(18.dp)).background(t.inset),
+            Modifier.fillMaxWidth().then(if (LocalRaisedGroups.current) Modifier.raisedCard(shape) else Modifier.clip(shape).background(t.inset)),
         ) { content() }
         if (footer != null) Txt(footer, T.footnote, t.text2, Modifier.padding(horizontal = 6.dp))
     }
+}
+
+/**
+ * A card standing off the surface it's on: an opaque face (white in light mode, a
+ * lighter grey than the panel in dark), a soft shadow under it and a faint rim.
+ */
+@Composable
+fun Modifier.raisedCard(shape: Shape): Modifier {
+    val t = LocalTokens.current
+    val face = if (t.dark) Color(0xFF26292F) else Color.White
+    val shade = Color.Black.copy(alpha = if (t.dark) 0.55f else 0.16f)
+    return this
+        .shadow(if (t.dark) 10.dp else 6.dp, shape, ambientColor = shade, spotColor = shade)
+        .background(face, shape)
+        .border(0.5.dp, if (t.dark) Color.White.copy(alpha = 0.07f) else Color.Black.copy(alpha = 0.06f), shape)
+        .clip(shape)
 }
 
 @Composable

@@ -77,7 +77,7 @@ val SidebarWidth = 84.dp
 val SidebarMargin = 8.dp
 
 /** As round as CarPlay's: its corner curve runs over about a third of the width. */
-private val SidebarCorner = 32.dp
+val SidebarCorner = 32.dp
 
 /** How far the tabs' content keeps from the left edge, clear of the sidebar. */
 val SideInset = SidebarMargin + SidebarWidth + 16.dp
@@ -210,6 +210,12 @@ fun Nav.pinAt(app: AppId, p: Offset): Boolean {
 
 /** Opens [app] full screen on the main screen, zoomed in (or asks first, if it's open on another screen). */
 fun Nav.openZoomed(app: AppId) {
+    // From another tab it grows out of its icon on the sidebar (see [Nav.launchFrom]),
+    // or out of the middle for an app that isn't pinned there.
+    if (tab != Tab.SCREENS) {
+        val y = sidebarCenters[app]
+        launchFrom = if (y != null && sidebarBounds != Rect.Zero) Offset(sidebarBounds.center.x, y) else Offset.Unspecified
+    }
     openScreens()
     Otility.instance.screens.tap(app, ScreenId.MAIN) { openScreens(it) }
 }
