@@ -51,6 +51,8 @@ class Otility : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Why the last Outo closed, and Outo's own crashes, for reading after a drive.
+        CrashLog.install(this)
         HelperLauncher.appContext = this
         prefs = Prefs(this)
         catalog = AppCatalog(this)
