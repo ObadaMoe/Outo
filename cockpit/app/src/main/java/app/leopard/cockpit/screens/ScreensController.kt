@@ -187,6 +187,13 @@ class ScreensController(
     /** Shows a screen in Otility, zoomed in (set by the navigator, which the window follows). */
     var showScreen: (ScreenId) -> Unit = {}
 
+    /**
+     * The app the Overview's map shows, while the Overview is on the screen. Its own
+     * windows (Waze's "start the drive", say) stay there with it: the driver is using it
+     * right there (see [poppedUp]).
+     */
+    @Volatile var onOverview: AppId? = null
+
     /** The last pop-up handled (the helper numbers them). */
     private var popupSeq = -1
     private val poppedAt = HashMap<AppId, Long>()
@@ -208,12 +215,17 @@ class ScreensController(
     /**
      * [app] opened a window of its own (Waze's "want to go there?", a settings page)
      * that Android put on the car's main screen, and the helper put back into Otility.
-     * It comes forward as if tapped, so it can be answered: zoomed in on the main
+     * Unless it's in use on the Overview's map ([onOverview]), where it already shows,
+     * it comes forward as if tapped, so it can be answered: zoomed in on the main
      * screen if it's there; the cluster's map comes to the main screen (Back takes it
      * back); a hidden one (the Overview's map, a parked app) opens there full screen.
      * Never a question: the app asked for it, not the driver. Floating, it shows already.
      */
     fun poppedUp(app: AppId) {
+        if (app == onOverview) {
+            Log.i(CarBridge.TAG, "${app.pkg} opened a window of its own on the Overview's map; it stays there")
+            return
+        }
         val at = _state.value.screenOf(app)
         Log.i(CarBridge.TAG, "${app.pkg} opened a window of its own; showing it (it's on ${at ?: "no screen"})")
         when {

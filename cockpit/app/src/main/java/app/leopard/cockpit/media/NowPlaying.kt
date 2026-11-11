@@ -10,7 +10,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
 import app.leopard.cockpit.CrashLog
@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 
@@ -58,6 +57,11 @@ data class Track(
  * What the media apps are playing, read from their media sessions. Android shows
  * them to Otility because it has notification access (the same access the
  * directions use), so this starts when [NavListener] connects.
+ *
+ * Read on a thread of its own: each look asks every media app for its state and its
+ * track (artwork too), and apps send changes many times a second (a phone over
+ * Bluetooth, YouTube). On the main thread that held up the screen and the touches
+ * on their way to the apps. A burst of changes is read once.
  */
 object NowPlaying {
     private const val TAG = "Otility"
@@ -66,19 +70,25 @@ object NowPlaying {
     /** The track to show: one that's playing, else the last one paused. Null when no app has one. */
     val track: StateFlow<Track?> = _track.asStateFlow()
 
-    private val main = Handler(Looper.getMainLooper())
+    /** Everything below runs here, apart from the buttons, which only read [current]. */
+    private val worker = Handler(HandlerThread("otility-media").apply { start() }.looper)
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.survive)
     private var context: Context? = null
     private var manager: MediaSessionManager? = null
     private var controllers: List<MediaController> = emptyList()
-    private var current: MediaController? = null
+    @Volatile private var current: MediaController? = null
+    /** Changes that come together (a new song brings its state and its track) are read once. */
+    private const val SETTLE_MS = 120L
+    private val refreshNow = Runnable { runCatching { read() }.onFailure { Log.w(TAG, "now playing", it) } }
 
     private val callback = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) = refresh()
         override fun onMetadataChanged(metadata: MediaMetadata?) = refresh()
         override fun onSessionDestroyed() = refresh()
     }
-    private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener { watch(it.orEmpty()) }
+    private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener {
+        runCatching { watch(it.orEmpty()) }.onFailure { e -> Log.w(TAG, "media sessions", e) }
+    }
 
     fun start(context: Context) {
         if (manager != null) return
@@ -87,16 +97,16 @@ object NowPlaying {
         val m = app.getSystemService(MediaSessionManager::class.java) ?: return
         val listener = ComponentName(app, NavListener::class.java)
         runCatching {
-            m.addOnActiveSessionsChangedListener(sessionsChanged, listener, main)
+            m.addOnActiveSessionsChangedListener(sessionsChanged, listener, worker)
             manager = m
-            main.post { runCatching { watch(m.getActiveSessions(listener)) } }
+            worker.post { runCatching { watch(m.getActiveSessions(listener)) } }
         }.onFailure { Log.w(TAG, "media sessions", it) }
     }
 
     fun stop() {
         runCatching { manager?.removeOnActiveSessionsChangedListener(sessionsChanged) }
         manager = null
-        main.post { watch(emptyList()) }
+        worker.post { runCatching { watch(emptyList()) } }
     }
 
     fun playPause() {
@@ -116,23 +126,34 @@ object NowPlaying {
         controllers.forEach { runCatching { it.unregisterCallback(callback) } }
         val own = context?.packageName
         controllers = list.filter { it.packageName != own }
-        controllers.forEach { it.registerCallback(callback, main) }
+        controllers.forEach { c -> runCatching { c.registerCallback(callback, worker) } }
         refresh()
     }
 
+    /** Reads again once the changes settle. */
     private fun refresh() {
-        val c = MediaChoice.pick(
-            controllers,
-            current = current,
-            same = { a, b -> a.sessionToken == b.sessionToken },
-            playing = { isPlaying(it.playbackState) },
+        worker.removeCallbacks(refreshNow)
+        worker.postDelayed(refreshNow, SETTLE_MS)
+    }
+
+    /** One app's state and track, asked for once per look. */
+    private class Session(val c: MediaController, val state: PlaybackState?, val md: MediaMetadata?)
+
+    private fun read() {
+        val sessions = controllers.map { Session(it, it.playbackState, it.metadata) }
+        val was = current
+        val s = MediaChoice.pick(
+            sessions,
+            current = was?.let { c -> sessions.firstOrNull { it.c.sessionToken == c.sessionToken } },
+            same = { a, b -> a.c.sessionToken == b.c.sessionToken },
+            playing = { isPlaying(it.state) },
             hasTrack = { hasTrack(it) },
             // One already on the card stays when it fails (say, play pressed and the
             // app refused), so the card doesn't vanish under the finger.
-            keeps = { !titleOf(it.metadata).isNullOrBlank() },
+            keeps = { !titleOf(it.md).isNullOrBlank() },
         )
-        current = c
-        _track.value = c?.let(::read)
+        current = s?.c
+        _track.value = s?.let { read(it) }
     }
 
     private fun isPlaying(s: PlaybackState?) = when (s?.state) {
@@ -143,23 +164,23 @@ object NowPlaying {
         else -> false
     }
 
-    private fun hasTrack(c: MediaController): Boolean {
-        val state = c.playbackState?.state
-        if (state == PlaybackState.STATE_ERROR) return false
-        return !titleOf(c.metadata).isNullOrBlank()
+    private fun hasTrack(s: Session): Boolean {
+        if (s.state?.state == PlaybackState.STATE_ERROR) return false
+        return !titleOf(s.md).isNullOrBlank()
     }
 
     private fun titleOf(md: MediaMetadata?): String? =
         md?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: md?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
 
-    private fun read(c: MediaController): Track? {
-        val md = c.metadata ?: return null
+    private fun read(session: Session): Track? {
+        val c = session.c
+        val md = session.md ?: return null
         val title = titleOf(md)?.takeIf { it.isNotBlank() } ?: return null
         val artist = listOf(
             MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
             MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, MediaMetadata.METADATA_KEY_ALBUM,
         ).firstNotNullOfOrNull { k -> md.getString(k)?.takeIf { it.isNotBlank() } }
-        val s = c.playbackState
+        val s = session.state
         val now = SystemClock.elapsedRealtime()
         val actions = s?.actions ?: 0L
         val (art, accent) = artOf(md, "$title|$artist|${md.getString(MediaMetadata.METADATA_KEY_ALBUM)}")
@@ -210,13 +231,13 @@ object NowPlaying {
             MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI,
         ).firstNotNullOfOrNull { k -> md.getString(k)?.takeIf { it.isNotBlank() } } ?: return null to null
         if (artFrom == uri) return artDone
-        // Read off the main thread, then shown with the next refresh.
+        // Read on the IO pool (a file or a content provider), then shown with the next look.
         val ctx = context ?: return null to null
         if (loading.add(uri)) {
             io.launch {
                 val b = runCatching { load(ctx, Uri.parse(uri)) }.getOrNull()
                 val done = b?.let(::prepare) ?: (null to null)
-                withContext(Dispatchers.Main) {
+                worker.post {
                     loading.remove(uri)
                     artFrom = uri
                     artDone = done

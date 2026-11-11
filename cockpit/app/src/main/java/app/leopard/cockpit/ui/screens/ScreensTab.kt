@@ -123,8 +123,6 @@ import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import kotlin.math.max
 import kotlin.math.min
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -325,24 +323,6 @@ fun ScreensTab() {
             if (onMain) controller.setMainZoomed(true)
             onDispose { if (onMain) controller.setMainZoomed(false) }
         }
-        // Zoomed into one app on the main screen: when it goes full screen (a YouTube
-        // video, say), BYD's bars go too (see Nav.appFullscreen). Its hidden display has no
-        // bars, so the helper reads the app's wish from Android's account of its windows.
-        val fullApp = (state[ScreenId.MAIN] as? ScreenContent.Single)?.app?.takeIf { onMain && peek == null }
-        LaunchedEffect(fullApp, helper) {
-            val h = helper
-            val app = fullApp
-            if (h == null || app == null) { nav.appFullscreen = false; return@LaunchedEffect }
-            while (true) {
-                val display = controller.hosts.displayOf(app)
-                val hides = display != null && withContext(Dispatchers.IO) {
-                    runCatching { h.hidesBars(app.pkg, display) }.getOrDefault(false)
-                }
-                nav.appFullscreen = hides
-                delay(700)
-            }
-        }
-        DisposableEffect(Unit) { onDispose { nav.appFullscreen = false } }
         val progress = remember { Animatable(1f) }
         var camFrom by remember { mutableStateOf(focus?.let { geo.zoomOn(it) } ?: geo.identity) }
         var camTo by remember { mutableStateOf(camFrom) }

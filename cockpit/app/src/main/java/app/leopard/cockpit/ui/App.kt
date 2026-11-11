@@ -124,11 +124,6 @@ class Nav(start: Tab) {
      * from the dashboard.
      */
     var launchFrom: Offset? = null
-    /**
-     * The main screen's app, zoomed into, has gone full screen (a YouTube video, say):
-     * BYD's bars go too, as they do for the car's own apps, and come back after.
-     */
-    var appFullscreen by mutableStateOf(false)
     fun openScreens(zoom: ScreenId? = null) {
         tab = Tab.SCREENS
         zoomRequest = zoom
@@ -164,20 +159,6 @@ fun OtilityApp(app: Otility) {
         androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
             isAppearanceLightStatusBars = !dark
             isAppearanceLightNavigationBars = !dark
-        }
-    }
-    // A video gone full screen in the main screen's app: BYD's bars hide (a swipe from the
-    // edge shows them for a moment), and the app gets the whole screen.
-    LaunchedEffect(nav.appFullscreen) {
-        val window = (view.context as? android.app.Activity)?.window ?: return@LaunchedEffect
-        androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
-            val bars = androidx.core.view.WindowInsetsCompat.Type.systemBars()
-            if (nav.appFullscreen) {
-                systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                hide(bars)
-            } else {
-                show(bars)
-            }
         }
     }
     // A place from the phone opened the map on the main screen: show it.

@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 13
+    const val VERSION = 14
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -754,14 +754,6 @@ internal class HelperService : IOtilityHelper.Stub() {
             return true
         }
         return false
-    }
-
-    override fun hidesBars(pkg: String, displayId: Int): Boolean {
-        check()
-        require(PACKAGE.matches(pkg)) { "not a package: $pkg" }
-        // Only that app's windows: a few kilobytes, where all of them would be far more.
-        val out = exec(listOf("dumpsys", "window", pkg), timeoutS = 3)
-        return !out.startsWith("error") && WindowBars.hides(out, pkg, displayId)
     }
 
     override fun installUpdate(apk: ParcelFileDescriptor): String {

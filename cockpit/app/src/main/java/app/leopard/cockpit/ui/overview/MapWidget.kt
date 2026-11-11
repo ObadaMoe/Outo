@@ -135,6 +135,13 @@ fun MapWidget(
         if (lent) otility.screens.lendClusterMap(lender, true)
         onDispose { if (lent) otility.screens.lendClusterMap(lender, false) }
     }
+    // Used here: the app's own windows (Waze's "start the drive") open here too, rather
+    // than taking the driver off to the main screen (see ScreensController.poppedUp).
+    val showing = id?.takeIf { live && onScreen }
+    DisposableEffect(showing) {
+        if (showing != null) otility.screens.onOverview = showing
+        onDispose { if (showing != null && otility.screens.onOverview == showing) otility.screens.onOverview = null }
+    }
 
     val p = progress
     LaunchedEffect(expanded) { p.animateTo(if (expanded) 1f else 0f, spring(1f, 280f)) }

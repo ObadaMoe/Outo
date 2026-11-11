@@ -20,7 +20,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
     - Now Playing, Engine Sound, Energy, Navigation;
     - Drive, Climate, Tyres, Screens now, Last 7 days.
   - Widgets look like Apple's: flat frosted cards, with the symbol and name in the accent colour. Until the car's values arrive, a widget says it's waiting rather than showing dashes.
-  - The map works where it is: drag to move it, pinch to zoom, tap its buttons. Double-tap it to open it large.
+  - The map works where it is: drag to move it, pinch to zoom, tap its buttons. Double-tap it to open it large. Anything the map app opens from there (Waze's screen to start a drive, say) opens there too.
   - Hold any widget, the map too, to move it, resize it or remove it. While the widgets shake, hold one for a moment before you drag it; a quick swipe scrolls the page instead.
   - When that map is on the driver cluster, the Overview takes it from there while it's open, all of it at the widget's size, and the cluster shows BYD's own view until you leave the Overview.
 - **Screens:**
@@ -31,7 +31,6 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - Tap a display to zoom in and use its apps; tap Screens on the sidebar, press the car's Back or swipe down with two fingers to zoom out. The controls hide after a few seconds; tap the dots at the top to bring them back.
   - Zoomed in, swipe two fingers left or right to move between the displays, the way pages turn. From the main screen, two fingers right open the driver cluster's map over it at full size, to pick a place, while the main screen's app keeps playing; two fingers left put the map back on the cluster.
   - Zoomed in, swipe one finger in from the left or right edge: a short swipe is Back inside the app. On the main screen with one app, keep going (about a fifth of the way in, until "Split View" shows) and let go: the app moves over to one half, and the other half waits for a second app, showing the ones you used lately and your pinned ones. Tap one there or on the sidebar, or drag one in. Cancel, Back or a short swipe gives the app its full screen back. While you're zoomed in, the car's own back swipe is off at the edges.
-  - When an app goes full screen on the main screen (a YouTube video, say), BYD's status bar and buttons step aside too; swipe in from the top or bottom edge to bring them back for a moment.
   - Save layouts, and choose what each display opens with at startup.
 - **Apps:**
   - Every app in the car, with search, on pages of big icons that you swipe through, as in CarPlay, with the apps you used lately in a row above them.

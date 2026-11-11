@@ -106,10 +106,4 @@ interface IOtilityHelper {
      * wrong; on success the caller has usually been closed by the update meanwhile.
      */
     String installUpdate(in ParcelFileDescriptor apk);
-
-    /**
-     * [pkg]'s window on [displayId] asked to hide the system bars (a video gone full
-     * screen, say). Hidden displays have no bars, so nothing else comes of the wish.
-     */
-    boolean hidesBars(String pkg, int displayId);
 }
