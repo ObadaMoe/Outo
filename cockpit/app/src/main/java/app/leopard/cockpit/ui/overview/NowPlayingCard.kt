@@ -96,7 +96,7 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
 
     BoxWithConstraints(
         modifier
-            .glass(shape, GlassKind.Card, tint = lerp(t.card, accent.copy(alpha = t.card.alpha), 0.32f))
+            .glass(shape, GlassKind.Widget, tint = lerp(t.card, accent.copy(alpha = t.card.alpha), 0.32f))
             .clip(shape),
     ) {
         // A soft wash of the artwork's colour from behind it.

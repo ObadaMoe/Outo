@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,10 +16,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -38,7 +40,6 @@ import app.leopard.cockpit.data.DOCK_MAX
 import app.leopard.cockpit.screens.DropTarget
 import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.screens.Slot
-import app.leopard.cockpit.ui.scrollEdges
 import app.leopard.cockpit.ui.SideInset
 import app.leopard.cockpit.ui.AppIcon
 import app.leopard.cockpit.ui.Icons
@@ -111,13 +112,50 @@ fun AppsTab() {
         )
     }
 
-    val grid = rememberLazyGridState()
+    val recentIds by app.prefs.recents.collectAsState()
+    val searching = query.isNotBlank()
+    val byId = remember(all) { all.associateBy { it.id } }
+    val recent = if (searching) emptyList() else recentIds.mapNotNull { byId[it] }
+
+    /** One app: its icon (tap to open, hold for the menu, hold and drag onto the sidebar to pin it), its name, and a dot while it's on a screen. */
+    @Composable
+    fun Tile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier) {
+        val on = state.screenOf(a.id)
+        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            AppIcon(
+                a, icon,
+                Modifier.liftable(a.id, LiftCallbacks(
+                    onTap = { tapOpen(a) },
+                    onHold = { bounds -> menu = MenuRequest(bounds, menuFor(a), a) },
+                    onDragStart = { p ->
+                        menu = null
+                        nav.dragging = a.id
+                        nav.dragAt = p
+                    },
+                    onDrag = { p -> nav.dragAt = p },
+                    onDrop = { p ->
+                        nav.pinAt(a.id, p)
+                        nav.dragging = null
+                    },
+                    onCancel = { nav.dragging = null },
+                )),
+            )
+            Spacer(Modifier.height(8.dp))
+            Txt(
+                a.label, T.footnote.copy(textAlign = TextAlign.Center), maxLines = 1,
+                modifier = Modifier.padding(horizontal = 6.dp).noRipple { tapOpen(a) },
+            )
+            Spacer(Modifier.height(4.dp))
+            Box(Modifier.size(5.dp).background(if (on != null) t.text2 else Color.Transparent, CircleShape))
+        }
+    }
+
     CabinBackground {
         Column(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(start = SideInset, end = 28.dp, top = 20.dp),
+                .padding(start = SideInset, end = 28.dp, top = 20.dp, bottom = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Apps", T.largeTitle, modifier = Modifier.weight(1f))
@@ -135,47 +173,70 @@ fun AppsTab() {
                         )
                     }
                 }
-            } else LazyVerticalGrid(
-                columns = GridCells.Adaptive(118.dp),
-                state = grid,
-                contentPadding = PaddingValues(top = 16.dp, bottom = 28.dp),
-                modifier = Modifier.fillMaxSize().scrollEdges(grid),
-            ) {
-                items(shown, key = { it.id.pkg }) { a ->
-                    val on = state.screenOf(a.id)
-                    Column(
-                        Modifier.padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        AppIcon(
-                            a, 68.dp,
-                            // Hold for the menu; hold and drag onto the sidebar to pin it there.
-                            Modifier.liftable(a.id, LiftCallbacks(
-                                onTap = { tapOpen(a) },
-                                onHold = { bounds -> menu = MenuRequest(bounds, menuFor(a), a) },
-                                onDragStart = { p ->
-                                    menu = null
-                                    nav.dragging = a.id
-                                    nav.dragAt = p
-                                },
-                                onDrag = { p -> nav.dragAt = p },
-                                onDrop = { p ->
-                                    nav.pinAt(a.id, p)
-                                    nav.dragging = null
-                                },
-                                onCancel = { nav.dragging = null },
-                            )),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Txt(
-                            a.label, T.footnote.copy(textAlign = TextAlign.Center), maxLines = 2,
-                            modifier = Modifier.padding(horizontal = 6.dp).noRipple { tapOpen(a) },
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Box(Modifier.size(5.dp).background(if (on != null) t.text2 else Color.Transparent, CircleShape))
+                return@Column
+            }
+            // As CarPlay's: big icons on pages that turn with a swipe, the apps used
+            // lately in a row above them. Columns and rows are as many as fit.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val cols = (maxWidth / AppCell).toInt().coerceAtLeast(3)
+                val cellW = maxWidth / cols
+                val recentRow = recent.take(cols)
+                val recentH = if (recentRow.isEmpty()) 0.dp else AppCell + RecentLabel
+                val rows = ((maxHeight - recentH - AllLabel - Dots) / AppCell).toInt().coerceAtLeast(1)
+                val perPage = cols * rows
+                val pages = shown.chunked(perPage)
+                val pager = rememberPagerState { pages.size }
+                // A new search starts on its first page.
+                LaunchedEffect(query) { if (pager.currentPage != 0) pager.scrollToPage(0) }
+                Column(Modifier.fillMaxSize()) {
+                    if (recentRow.isNotEmpty()) {
+                        Section("Recent")
+                        Row(Modifier.height(AppCell)) {
+                            recentRow.forEach { a ->
+                                key("recent", a.id.pkg) { Tile(a, AppIconSize, Modifier.width(cellW).padding(top = 10.dp)) }
+                            }
+                        }
+                    }
+                    Section(if (searching) "Results" else "All Apps")
+                    HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.Top, key = { it }) { page ->
+                        Column {
+                            pages.getOrNull(page).orEmpty().chunked(cols).forEach { line ->
+                                Row(Modifier.height(AppCell)) {
+                                    line.forEach { a -> key(a.id.pkg) { Tile(a, AppIconSize, Modifier.width(cellW).padding(top = 10.dp)) } }
+                                }
+                            }
+                        }
+                    }
+                    // Which page, as an iPhone's dots show it.
+                    Box(Modifier.fillMaxWidth().height(Dots), contentAlignment = Alignment.Center) {
+                        if (pages.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            repeat(pages.size) { i ->
+                                Box(
+                                    Modifier.size(8.dp).background(
+                                        if (i == pager.currentPage) t.text else t.text2.copy(alpha = 0.4f), CircleShape,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** An app's place on the Apps pages: its icon, name and dot, and room around them. */
+private val AppCell = 150.dp
+private val AppIconSize = 84.dp
+private val RecentLabel = 30.dp
+private val AllLabel = 30.dp
+private val Dots = 24.dp
+
+/** A section's name above its apps, as Apple's small capitals. */
+@Composable
+private fun Section(name: String) {
+    Txt(
+        name.uppercase(), T.sectionHeader, LocalTokens.current.text2,
+        Modifier.padding(start = 8.dp, top = 12.dp).height(18.dp),
+    )
 }

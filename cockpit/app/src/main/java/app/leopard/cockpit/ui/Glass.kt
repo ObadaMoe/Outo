@@ -39,6 +39,11 @@ enum class GlassKind(val blur: Dp, val lensHeight: Dp, val lensAmount: Dp) {
     Bar(blur = 22.dp, lensHeight = 16.dp, lensAmount = 32.dp),
     /** Cards on a photo. */
     Card(blur = 24.dp, lensHeight = 10.dp, lensAmount = 18.dp),
+    /**
+     * The Overview's widgets, as Apple's: frosted and flat, with no bent edge and no
+     * rim around it, only a soft shadow under it.
+     */
+    Widget(blur = 28.dp, lensHeight = 0.dp, lensAmount = 0.dp),
     /** Menus and alerts: frosted so text stays readable. */
     Menu(blur = 30.dp, lensHeight = 14.dp, lensAmount = 26.dp),
     /** Small round controls over app content. */
@@ -60,7 +65,7 @@ fun Modifier.glass(
 ): Modifier {
     val t = LocalTokens.current
     val surface = tint ?: when (kind) {
-        GlassKind.Card -> t.card
+        GlassKind.Card, GlassKind.Widget -> t.card
         GlassKind.Menu -> t.menu
         else -> t.glassTint
     }
@@ -68,8 +73,9 @@ fun Modifier.glass(
         return this
             .then(if (shadow) Modifier.shadow(16.dp, shape, ambientColor = Color.Black, spotColor = Color.Black) else Modifier)
             .background(if (tint != null) tint.copy(alpha = 1f) else t.solidGlass, shape)
-            .border(0.5.dp, t.sep, shape)
+            .then(if (kind == GlassKind.Widget) Modifier else Modifier.border(0.5.dp, t.sep, shape))
     }
+    val flat = kind == GlassKind.Widget
     val d = LocalDensity.current
     val blurPx = with(d) { kind.blur.toPx() }
     val lensH = with(d) { kind.lensHeight.toPx() }
@@ -82,17 +88,22 @@ fun Modifier.glass(
         effects = {
             vibrancy()
             blur(blurPx)
-            lens(lensH, lensA)
+            if (!flat) lens(lensH, lensA)
         },
-        highlight = {
-            Highlight(
-                width = 1.dp,
-                style = HighlightStyle.Plain(color = Color.White.copy(alpha = rim)),
-            )
+        highlight = if (flat) null else {
+            {
+                Highlight(
+                    width = 1.dp,
+                    style = HighlightStyle.Plain(color = Color.White.copy(alpha = rim)),
+                )
+            }
         },
-        shadow = if (shadow) {
-            { Shadow(radius = 28.dp, color = Color.Black.copy(alpha = if (t.dark) 0.38f else 0.14f)) }
-        } else null,
+        shadow = when {
+            !shadow -> null
+            // Apple's widgets barely lift off what's behind them.
+            flat -> { { Shadow(radius = 18.dp, color = Color.Black.copy(alpha = if (t.dark) 0.22f else 0.07f)) } }
+            else -> { { Shadow(radius = 28.dp, color = Color.Black.copy(alpha = if (t.dark) 0.38f else 0.14f)) } }
+        },
         onDrawSurface = { drawRect(surface) },
     )
 }

@@ -272,6 +272,18 @@ fun WidgetBoard(
                                 val corner = 56.dp.toPx()
                                 /** [local] (a point on this widget) in window coordinates. */
                                 fun window(local: Offset): Offset? = coords[0]?.takeIf { it.isAttached }?.localToWindow(local)
+                                /** The widget's menu, beside the place it goes back to (the board may still be making room). */
+                                fun openMenu() {
+                                    val l = layoutNow
+                                    val i = l.indexOf(kind)
+                                    val b = board[0]?.takeIf { it.isAttached }
+                                    if (i >= 0 && b != null) {
+                                        val now = l.slots[i]
+                                        val place = Rect(b.localToRoot(topLeft(pack(l)[i])), sizeOf(fit(now.size)))
+                                        val seen = place.intersect(viewport())
+                                        onMenuNow(now, if (seen.isEmpty) place else seen)
+                                    }
+                                }
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                     var mode = Grab.MOVE
@@ -304,6 +316,44 @@ fun WidgetBoard(
                                     } else {
                                         onBadge = down.position.x < badge && down.position.y < badge
                                         if (resizable && down.position.x > size.width - corner && down.position.y > size.height - corner) mode = Grab.RESIZE
+                                        if (mode == Grab.MOVE && !onBadge) {
+                                            // Even while editing, a widget moves only once it's been held a
+                                            // moment, so touching one doesn't shove it: a quick swipe scrolls
+                                            // the page instead, and a tap opens its menu.
+                                            down.consume()
+                                            var holdAt = down.position
+                                            val early: Int? = withTimeoutOrNull(EDIT_HOLD_MS) {
+                                                var travel = Offset.Zero
+                                                var r = -1
+                                                while (r < 0) {
+                                                    val e = awaitPointerEvent(PointerEventPass.Initial)
+                                                    val c = e.changes.firstOrNull { it.id == down.id }
+                                                    r = when {
+                                                        c == null || !c.pressed -> 0
+                                                        e.changes.size > 1 -> 1
+                                                        else -> {
+                                                            travel += c.positionChangeIgnoreConsumed()
+                                                            holdAt = c.position
+                                                            if (travel.getDistance() > slop) 1 else -1
+                                                        }
+                                                    }
+                                                }
+                                                r
+                                            }
+                                            when (early) {
+                                                0 -> { openMenu(); return@awaitEachGesture }
+                                                1 -> return@awaitEachGesture
+                                                else -> {
+                                                    // Held: it lifts, as when editing began, and follows the finger.
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    grabAt = holdAt
+                                                    finger = window(holdAt) ?: Offset.Unspecified
+                                                    follow()
+                                                    active = kind
+                                                    grab = Grab.MOVE
+                                                }
+                                            }
+                                        }
                                     }
                                     down.consume()
                                     var travel = Offset.Zero
@@ -364,23 +414,14 @@ fun WidgetBoard(
                                             finger = Offset.Unspecified
                                         }
                                         onBadge -> onRemoveNow(kind)
-                                        // A hold, or a tap while editing: the widget's menu, beside the
-                                        // place it goes back to (the board may still be making room).
+                                        // A hold let go without moving: the widget's menu.
                                         else -> {
                                             if (active == kind) {
                                                 active = null
                                                 grab = Grab.NONE
                                                 finger = Offset.Unspecified
                                             }
-                                            val l = layoutNow
-                                            val i = l.indexOf(kind)
-                                            val b = board[0]?.takeIf { it.isAttached }
-                                            if (i >= 0 && b != null) {
-                                                val now = l.slots[i]
-                                                val place = Rect(b.localToRoot(topLeft(pack(l)[i])), sizeOf(fit(now.size)))
-                                                val seen = place.intersect(viewport())
-                                                onMenuNow(now, if (seen.isEmpty) place else seen)
-                                            }
+                                            openMenu()
                                         }
                                     }
                                 }
@@ -416,6 +457,9 @@ fun WidgetBoard(
 }
 
 /** The − in a shaking widget's corner. */
+/** While editing, how long a widget is held before it moves with the finger. */
+private const val EDIT_HOLD_MS = 280L
+
 @Composable
 internal fun RemoveBadge(modifier: Modifier) {
     Box(

@@ -126,12 +126,23 @@ fun GlassIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onCli
 @Composable
 fun GlassPillButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, filled: Boolean = false) {
     val t = LocalTokens.current
-    val fg = if (filled) t.onFill else t.text
+    val cardTint = LocalCardTint.current
+    val fg = when {
+        filled -> t.onFill
+        cardTint != null -> cardTint
+        else -> t.text
+    }
     Row(
         modifier
             .height(48.dp)
             .pressable(onClick)
-            .then(if (filled) Modifier.shadow(10.dp, Capsule).background(t.fill, Capsule) else Modifier.glass(Capsule, GlassKind.Button))
+            .then(
+                when {
+                    filled -> Modifier.shadow(10.dp, Capsule).background(t.fill, Capsule)
+                    cardTint != null -> Modifier.background(cardTint.copy(alpha = if (t.dark) 0.2f else 0.14f), Capsule)
+                    else -> Modifier.glass(Capsule, GlassKind.Button)
+                },
+            )
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -282,6 +293,13 @@ fun Slider(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Modifie
  * Apple's System Settings (Settings' pages); otherwise sunk into it, like an iOS inset list.
  */
 val LocalRaisedGroups = staticCompositionLocalOf { false }
+
+/**
+ * Inside a widget on the Overview, its colour: buttons there take Apple's tinted look
+ * (SwiftUI's bordered buttons, a pale fill of the colour with the label in it), not
+ * glass with a rim on glass.
+ */
+val LocalCardTint = staticCompositionLocalOf<Color?> { null }
 
 /** A rounded group of rows, like an iOS inset list (raised: see [LocalRaisedGroups]). */
 @Composable

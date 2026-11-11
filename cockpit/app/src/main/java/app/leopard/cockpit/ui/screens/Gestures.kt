@@ -3,17 +3,22 @@ package app.leopard.cockpit.ui.screens
 import android.graphics.Matrix
 import android.view.KeyEvent
 import android.view.MotionEvent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -26,6 +31,7 @@ import androidx.compose.ui.platform.LocalView
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.helper.toCancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -44,19 +50,32 @@ class LiftCallbacks(
 
 /**
  * Apple's way of handling an app icon: a quick tap opens it, holding it lifts
- * it (and shows its menu), and moving while held drags it.
+ * it (and shows its menu), and moving while held drags it. While the finger is
+ * on it, it sinks a little and dims, as with every tap in Otility ([app.leopard.cockpit.ui.PressIndication]).
  */
 @Composable
 fun Modifier.liftable(key: Any?, callbacks: LiftCallbacks): Modifier {
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val cb by rememberUpdatedState(callbacks)
     val haptic = LocalHapticFeedback.current
+    val press = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    fun pressed(on: Boolean) {
+        scope.launch {
+            if (on) press.animateTo(1f, tween(90))
+            else {
+                if (press.value < 0.7f) press.animateTo(1f, tween(60))
+                press.animateTo(0f, spring(dampingRatio = 1f, stiffness = 380f))
+            }
+        }
+    }
     return this
         .onGloballyPositioned { coords[0] = it }
         .pointerInput(key) {
             fun root(p: Offset): Offset = coords[0]?.takeIf { it.isAttached }?.localToRoot(p) ?: p
             awaitEachGesture {
                 val down = awaitFirstDown()
+                pressed(true)
                 val slop = viewConfiguration.touchSlop
                 // 0 = tap, 1 = moved (a scroll, not ours), 2 = cancelled; null = held long enough.
                 val early: Int? = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
@@ -73,6 +92,9 @@ fun Modifier.liftable(key: Any?, callbacks: LiftCallbacks): Modifier {
                         }
                     }
                     r
+                }.also { r ->
+                    // A tap shows its press; a scroll or a hold (which lifts it instead) lets go.
+                    if (r == 0) pressed(false) else scope.launch { press.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f)) }
                 }
                 when (early) {
                     0 -> cb.onTap()
@@ -110,6 +132,12 @@ fun Modifier.liftable(key: Any?, callbacks: LiftCallbacks): Modifier {
                     }
                 }
             }
+        }
+        .graphicsLayer {
+            val p = press.value.coerceIn(0f, 1f)
+            val s = 1f - 0.08f * p
+            scaleX = s; scaleY = s
+            alpha = 1f - 0.3f * p
         }
 }
 

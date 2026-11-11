@@ -36,6 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalFocusManager
+import app.leopard.cockpit.ui.screens.SearchField
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,7 +140,13 @@ fun SettingsTab() {
                     .fillMaxHeight()
                     .raisedCard(rounded(SidebarCorner - PagesInset)),
             ) {
-                Txt("Settings", T.largeTitle, modifier = Modifier.padding(start = 22.dp, top = 20.dp, bottom = 12.dp))
+                Txt("Settings", T.largeTitle, modifier = Modifier.padding(start = 22.dp, top = 20.dp, bottom = 10.dp))
+                // As macOS's: search the settings by name; each match names its page.
+                var query by remember { mutableStateOf("") }
+                // The result tapped last (its page, and the setting, if it was one): lit up alone.
+                var picked by remember { mutableStateOf<Pair<SettingsPage, String?>?>(null) }
+                val focus = LocalFocusManager.current
+                SearchField(query, { query = it }, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp))
                 val update by Otility.instance.updater.state.collectAsState()
                 val updateReady = update is UpdateState.Available
                 Column(
@@ -148,6 +157,45 @@ fun SettingsTab() {
                         .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    val q = query.trim()
+                    // Searching: the pages whose name matches, then each setting that does,
+                    // under its page's name.
+                    if (q.isNotEmpty()) {
+                        val hits = SettingsPage.entries.flatMap { page ->
+                            (if (page.title.contains(q, ignoreCase = true)) listOf(page to null) else emptyList()) +
+                                page.finds.filter { it.contains(q, ignoreCase = true) }.map { page to it }
+                        }
+                        if (hits.isEmpty()) {
+                            Txt("No Results", T.callout, t.text2, Modifier.fillMaxWidth().padding(top = 18.dp), maxLines = 1)
+                        }
+                        hits.forEach { (page, setting) ->
+                            val on = nav.settingsPage == page && picked == (page to setting)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(rounded(12.dp))
+                                    .background(if (on) t.fill else Color.Transparent)
+                                    .clickable {
+                                        picked = page to setting
+                                        nav.settingsPage = page
+                                        // The keyboard goes, so the page shows whole.
+                                        focus.clearFocus()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.size(30.dp).background(page.color, rounded(8.dp)), contentAlignment = Alignment.Center) {
+                                    Glyph(page.icon, Color.White, size = 18.dp)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Txt(setting ?: page.title, T.callout, if (on) t.onFill else t.text, maxLines = 1)
+                                    if (setting != null) Txt(page.title, T.caption, if (on) t.onFill.copy(alpha = 0.8f) else t.text2, maxLines = 1)
+                                }
+                            }
+                        }
+                        return@Column
+                    }
                     SettingsPage.entries.forEach { page ->
                         val on = nav.settingsPage == page
                         Row(
@@ -201,6 +249,37 @@ fun SettingsTab() {
         }
     }
 }
+
+/** The settings on each page, by the names they show, for the search. */
+private val SettingsPage.finds: List<String>
+    get() = when (this) {
+        SettingsPage.DISPLAY -> listOf(
+            "Appearance", "Light", "Dark", "Automatic", "Accent colour", "Glass", "Clear", "Tinted",
+            "Reduce transparency", "Show the emblem", "Dim the emblem after",
+        )
+        SettingsPage.SCREENS -> listOf(
+            "Live previews", "Ask before replacing an app", "Hide controls when zoomed in after", "Gestures",
+            "Two fingers up", "Two fingers down", "Two fingers left or right", "Swipe in from the left edge",
+            "Drag the divider", "Restore the last layout", "Sidebar apps", "Saved layouts",
+        )
+        SettingsPage.CLUSTER -> listOf(
+            "Map on the cluster", "BYD", "Waze", "Google Maps", "Map channel", "Blind-spot camera when signalling",
+            "Show the map channel now", "Turn the map channel off",
+        )
+        SettingsPage.NAVIGATION -> listOf(
+            "Navigation app", "Places open on", "Places from your iPhone", "Pairing code", "Show the next turn",
+            "Read the map's screen", "Turn arrows on the HUD", "Speed limit from the map", "Turn arrows on the driver cluster",
+            "Recent places", "Clear recent places",
+        )
+        SettingsPage.SOUND -> listOf(
+            "Engine sound", "Car", "Sound Studio", "Mode", "Street", "Sport", "Track", "Volume",
+            "Only in D, R or S", "Exterior speaker",
+        )
+        SettingsPage.STARTUP -> listOf("Start with the car", "Open on", "Restore the last layout", "Allow in the car's settings")
+        SettingsPage.CONNECTION -> listOf("Helper", "Connect to the car", "Screens the car reports", "Apps on each display", "Car values")
+        SettingsPage.INTEGRATIONS -> listOf("Apps Outo knows best", "Your phone")
+        SettingsPage.ABOUT -> listOf("Updates", "Check for updates automatically", "Check Now", "Version", "Open-source parts", "Car photos")
+    }
 
 /** How far the pages' card keeps from the panel's edge. */
 private val PagesInset = 10.dp

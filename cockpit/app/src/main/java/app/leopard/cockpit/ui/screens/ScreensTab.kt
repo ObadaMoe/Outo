@@ -749,6 +749,17 @@ fun ScreensTab() {
                 Box(Modifier.fillMaxSize().routeTouches(router))
             }
 
+            // ---- An empty screen in view: a shelf of apps to open on it ----------------
+            if (focusedIdle && settled && drag.app == null) {
+                val f = focus!!
+                EmptyScreenApps(
+                    f, appsById,
+                    onOpen = { app -> controller.tap(app, f) { focus = it } },
+                    onAll = { nav.tab = app.leopard.cockpit.data.Tab.APPS },
+                    modifier = Modifier.at { camera().map(geo.apps(f), w, h) },
+                )
+            }
+
             // ---- The split divider: drag to resize, drag to an edge to go full screen ---
             if (mainSplit != null && (focus == null || focus == ScreenId.MAIN)) {
                 val zoomed = focus == ScreenId.MAIN

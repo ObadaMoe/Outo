@@ -383,6 +383,7 @@ fun GlassChip(text: String, modifier: Modifier = Modifier, icon: ImageVector? = 
     }
 }
 
+/** A tap with Apple's press ([PressIndication]) instead of Android's ripple. */
 @Composable
 fun Modifier.noRipple(onClick: () -> Unit): Modifier =
-    clickable(remember { MutableInteractionSource() }, null, onClick = onClick)
+    clickable(remember { MutableInteractionSource() }, androidx.compose.foundation.LocalIndication.current, onClick = onClick)

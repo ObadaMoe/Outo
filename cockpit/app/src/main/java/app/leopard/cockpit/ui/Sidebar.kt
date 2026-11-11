@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -89,17 +90,24 @@ val SideInset = SidebarMargin + SidebarWidth + 16.dp
 private val PinIcon = 52.dp
 private val PinGap = 10.dp
 
+/** How many apps used lately the sidebar shows at most, under the pinned ones. */
+private const val RECENT_ON_SIDEBAR = 2
+/** The room the line above the recent apps takes. */
+private val RecentLine = 11.dp
+
 /** Settings, Apps, Screens and Home: plain icons, smaller than the apps, as CarPlay's Home is. */
 private val TabHeight = 48.dp
 
 /**
- * The sidebar, as in CarPlay: down the left side, on every tab. The time and the
- * connection at the top, then the apps pinned to it, then (smaller) Settings, Apps
- * and Screens, and the Overview's Home at the bottom.
+ * The sidebar, as in CarPlay: down the left side, on every tab. The apps pinned to
+ * it at the top, then (under a thin line) one or two used lately that aren't pinned,
+ * as CarPlay's shows the latest; then (smaller) Settings, Apps and Screens, and the
+ * Overview's Home at the bottom.
  *
- * Tap a pinned app to open it full screen on the main screen, zoomed in. Hold one
- * for its menu, or drag it: up and down the sidebar to move it, or (on the Screens
- * tab) onto a screen. Apps are pinned by dragging them here from Apps.
+ * Tap an app to open it full screen on the main screen, zoomed in. Hold one for its
+ * menu, or drag it: up and down the sidebar to move it (a recent one gets pinned
+ * where it's let go), or (on the Screens tab) onto a screen. Apps are pinned by
+ * dragging them here from Apps.
  */
 @Composable
 fun Sidebar(modifier: Modifier = Modifier) {
@@ -111,6 +119,8 @@ fun Sidebar(modifier: Modifier = Modifier) {
     val state by app.screens.state.collectAsState()
     val byId = remember(all) { all.associateBy { it.id } }
     val pinned = pinnedIds.mapNotNull { byId[it] }
+    val recentIds by app.prefs.recents.collectAsState()
+    val recents = recentIds.filter { it !in pinnedIds }.mapNotNull { byId[it] }
     val full = pinnedIds.size >= DOCK_MAX
     // Where a dragged app would go among the pinned ones (null: it isn't over the sidebar).
     // Worked out only when that changes, not at each move of the finger.
@@ -133,9 +143,6 @@ fun Sidebar(modifier: Modifier = Modifier) {
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Settings at the top, Home at the bottom. A dot on it: a new version of Outo is ready.
-        val update by Otility.instance.updater.state.collectAsState()
-        TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
         // The large map on the Overview has a way back here, where it was above the tab bar.
         AnimatedVisibility(
             nav.back != null,
@@ -145,9 +152,13 @@ fun Sidebar(modifier: Modifier = Modifier) {
             GlassIconButton(Icons.back, { nav.back?.invoke() }, Modifier.padding(top = 4.dp), size = 48.dp)
         }
 
-        // The pinned apps, in the middle of the space they have; they scroll when there
-        // are more than fit.
-        Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+        // The pinned apps, in the middle of the space they have, then the recent ones;
+        // they scroll when there are more than fit.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+            // As many recent ones as fit under the pinned ones, one or two; one at least
+            // (then it all scrolls a little, if the pinned ones fill the space).
+            val slots = ((maxHeight - RecentLine) / (PinIcon + PinGap)).toInt()
+            val recent = recents.take((slots - pinned.size).coerceIn(1, RECENT_ON_SIDEBAR))
             Column(
                 // Each app has its gap below it.
                 Modifier.scrollEdges(scroll, fade = 24.dp).verticalScroll(scroll),
@@ -170,9 +181,23 @@ fun Sidebar(modifier: Modifier = Modifier) {
                     }
                 }
                 GapSlot(gapAt == i)
+                if (recent.isNotEmpty()) {
+                    // A thin line between the pinned apps and the recent ones.
+                    Box(Modifier.padding(bottom = RecentLine - 1.dp).width(26.dp).height(1.dp).background(t.sep))
+                    recent.forEach { a ->
+                        key("recent", a.id.pkg) {
+                            PinnedApp(a, running = a.id in state.running, dim = a.id == dragging || a.id == lifted, collapsed = false, pinned = false)
+                        }
+                    }
+                }
             }
         }
 
+        // Settings, Apps, Screens and Home at the bottom, the space at the top left to the
+        // apps. A dot on Settings: a new version of Outo is ready.
+        val update by Otility.instance.updater.state.collectAsState()
+        TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
+        Spacer(Modifier.height(4.dp))
         TabButton(Tab.APPS, Icons.apps)
         Spacer(Modifier.height(4.dp))
         TabButton(Tab.SCREENS, Icons.screens)
@@ -229,10 +254,10 @@ private fun GapSlot(open: Boolean) {
 }
 
 @Composable
-private fun PinnedApp(a: AppInfo, running: Boolean, dim: Boolean, collapsed: Boolean) {
+private fun PinnedApp(a: AppInfo, running: Boolean, dim: Boolean, collapsed: Boolean, pinned: Boolean = true) {
     val nav = LocalNav.current
     val t = LocalTokens.current
-    val callbacks = remember(a) { PinnedLift(nav, a).callbacks }
+    val callbacks = remember(a, pinned) { PinnedLift(nav, a, pinned).callbacks }
     val h by animateDpAsState(if (collapsed) 0.dp else PinIcon + PinGap, spring(0.8f, 520f), label = "pin")
     val alpha by animateFloatAsState(
         when {
@@ -270,9 +295,9 @@ private fun PinnedApp(a: AppInfo, running: Boolean, dim: Boolean, collapsed: Boo
  * a screen, its menu there), elsewhere the sidebar's. Decided when the finger holds,
  * for the whole touch.
  */
-private class PinnedLift(private val nav: Nav, private val a: AppInfo) {
+private class PinnedLift(private val nav: Nav, private val a: AppInfo, private val pinned: Boolean) {
     private var active: LiftCallbacks? = null
-    private fun resolve() = nav.dockLift?.invoke(a) ?: ownLift(nav, a)
+    private fun resolve() = nav.dockLift?.invoke(a) ?: ownLift(nav, a, pinned)
     val callbacks = LiftCallbacks(
         onTap = { resolve().onTap() },
         onHold = { bounds -> active = resolve().also { it.onHold(bounds) } },
@@ -284,16 +309,16 @@ private class PinnedLift(private val nav: Nav, private val a: AppInfo) {
 }
 
 /** Away from the Screens tab: tap to open zoomed in, hold for the menu, drag to move it on the sidebar. */
-private fun ownLift(nav: Nav, a: AppInfo) = LiftCallbacks(
+private fun ownLift(nav: Nav, a: AppInfo, pinned: Boolean) = LiftCallbacks(
     onTap = { nav.openZoomed(a.id) },
-    onHold = { bounds -> nav.menu = MenuRequest(bounds, pinnedMenu(nav, a), a) },
+    onHold = { bounds -> nav.menu = MenuRequest(bounds, pinnedMenu(nav, a, pinned), a) },
     onDragStart = { p -> nav.menu = null; nav.dragging = a.id; nav.dragAt = p },
     onDrag = { p -> nav.dragAt = p },
     onDrop = { p -> nav.pinAt(a.id, p); nav.dragging = null },
     onCancel = { nav.dragging = null },
 )
 
-private fun pinnedMenu(nav: Nav, a: AppInfo): List<MenuEntry> {
+private fun pinnedMenu(nav: Nav, a: AppInfo, pinned: Boolean): List<MenuEntry> {
     val otility = Otility.instance
     val screens = otility.screens
     val state = screens.state.value
@@ -315,14 +340,18 @@ private fun pinnedMenu(nav: Nav, a: AppInfo): List<MenuEntry> {
         },
         MenuItem("Picture in Picture", Icons.pip) { screens.pictureInPicture(a.id) },
         MenuGap,
-        MenuItem("Remove from Sidebar", Icons.minus, destructive = true) {
+        if (pinned) MenuItem("Remove from Sidebar", Icons.minus, destructive = true) {
             otility.prefs.setDock(otility.prefs.dock.value - a.id)
+        }
+        // A recent one: kept on the sidebar, at the end of the pinned ones.
+        else MenuItem("Keep on Sidebar", Icons.plus) {
+            otility.prefs.setDock(otility.prefs.dock.value + a.id)
         },
     )
 }
 
 /**
- * Settings (at the top), Apps, Screens and the Overview's Home square (at the bottom): plain icons with nothing
+ * Settings, Apps, Screens and the Overview's Home square, at the bottom: plain icons with nothing
  * behind them, as CarPlay's Home is. The open tab's icon turns blue. Tapped again,
  * a tab goes back to its start (zooms out of a screen, closes the large map).
  */

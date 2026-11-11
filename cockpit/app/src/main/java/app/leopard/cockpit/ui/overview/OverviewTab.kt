@@ -110,6 +110,7 @@ import app.leopard.cockpit.ui.Switch
 import app.leopard.cockpit.ui.Txt
 import app.leopard.cockpit.ui.glass
 import app.leopard.cockpit.ui.noRipple
+import app.leopard.cockpit.ui.LocalCardTint
 import app.leopard.cockpit.ui.rounded
 import app.leopard.cockpit.ui.scrollEdges
 import app.leopard.cockpit.ui.theme.LocalTokens
@@ -361,15 +362,38 @@ fun Card(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val t = LocalTokens.current
-    Column(modifier.glass(rounded(28.dp), GlassKind.Card).clip(rounded(28.dp)).padding(if (compact) 16.dp else 20.dp)) {
+    Column(modifier.glass(rounded(WidgetCorner), GlassKind.Widget).clip(rounded(WidgetCorner)).padding(if (compact) 16.dp else 18.dp)) {
+        // As Apple's widgets name themselves: the symbol and the name in the accent
+        // colour (the same on every widget), small and semibold, in sentence case.
+        val color = t.accText
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Glyph(icon, t.accText, size = 16.dp)
-            Spacer(Modifier.width(6.dp))
-            Txt(title.uppercase(), T.sectionHeader, t.text2, Modifier.weight(1f), maxLines = 1)
+            Glyph(icon, color, size = 17.dp)
+            Spacer(Modifier.width(7.dp))
+            Txt(title, T.subhead.copy(fontWeight = FontWeight.SemiBold), color, Modifier.weight(1f), maxLines = 1)
             trailing()
         }
         Spacer(Modifier.height(if (compact) 8.dp else 14.dp))
-        content()
+        androidx.compose.runtime.CompositionLocalProvider(LocalCardTint provides color) { content() }
+    }
+}
+
+/** Apple's widgets are less round than its sidebar: about this, at these sizes. */
+private val WidgetCorner = 24.dp
+
+/**
+ * A widget whose values haven't come from the car yet (Outo just started, or isn't
+ * connected): one quiet line in the middle of the card, in place of dashes and empty
+ * gauges that look broken.
+ */
+@Composable
+private fun ColumnScope.Waiting() {
+    val t = LocalTokens.current
+    val helper by HelperConnection.helper.collectAsState()
+    Box(Modifier.fillMaxWidth().weight(1f, fill = true), contentAlignment = Alignment.Center) {
+        Txt(
+            if (helper == null) "Shows once Outo is connected to the car" else "Waiting for the car…",
+            T.subhead.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), t.text2,
+        )
     }
 }
 
@@ -388,6 +412,10 @@ private fun km(v: Int?) = v?.let { "%,d km".format(it) } ?: DASH
 private fun EnergyCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
     val t = LocalTokens.current
     val total = ((v.elecRangeKm ?: 0) + (v.fuelRangeKm ?: 0)).coerceAtLeast(1)
+    if (v.soc == null && v.totalRangeKm == null && v.elecRangeKm == null && v.fuelRangeKm == null) {
+        Card("Energy", Icons.energy, modifier) { Waiting() }
+        return
+    }
     if (slot.size.w <= 3) {
         // Small and Half: the battery ring, the range, and the split between battery and fuel.
         Card("Energy", Icons.energy, modifier) {
@@ -599,6 +627,7 @@ private fun DriveCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
     val t = LocalTokens.current
     val slim = slot.size.h == 1
     Card("Drive", Icons.gauge, modifier, compact = slim) {
+        if (v.gear == null && v.speedKmh == null) { Waiting(); return@Card }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(if (slim) 40.dp else 64.dp).background(t.track, rounded(if (slim) 12.dp else 18.dp)), contentAlignment = Alignment.Center) {
                 Txt(v.gear ?: DASH, (if (slim) T.headline else T.numberM).copy(fontWeight = FontWeight.Bold))
@@ -633,6 +662,7 @@ private fun ClimateCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
     Card("Climate", Icons.climate, modifier, compact = slim, trailing = {
         v.acOn?.let { Txt(if (it) "A/C on" else "A/C off", T.footnote, t.text2) }
     }) {
+        if (v.tempDriver == null && v.tempPassenger == null && v.tempOut == null) { Waiting(); return@Card }
         if (slim) {
             // Just the two temperatures, side by side.
             Row(verticalAlignment = Alignment.Bottom) {
@@ -663,7 +693,9 @@ private fun TyresCard(v: VehicleData, modifier: Modifier) {
     val t = LocalTokens.current
     val tyres = v.tyresBar
     fun label(i: Int) = tyres[i]?.let { "%.1f".format(it) } ?: DASH
-    Card("Tyres", Icons.tire, modifier, trailing = { Txt("bar", T.footnote, t.text2) }) {
+    val none = tyres.all { it == null }
+    Card("Tyres", Icons.tire, modifier, trailing = { if (!none) Txt("bar", T.footnote, t.text2) }) {
+        if (none) { Waiting(); return@Card }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(36.dp)) {
                 Txt(label(0), T.numberM)

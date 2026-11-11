@@ -510,10 +510,46 @@ class ScreensController(
         ) { commitClosing(Screens.close(_state.value, app)) }
     }
 
-    /** Closes [app] at once: its button above the screen already asked, by turning red. */
+    /** Closes [app] at once: its button above the screen already asked, by turning red. Undo puts it back. */
     fun close(app: AppId) {
-        val next = Screens.close(_state.value, app)
-        if (next != _state.value) commitClosing(next)
+        val before = _state.value
+        val next = Screens.close(before, app)
+        if (next == before) return
+        commitClosing(next)
+        _closed.value = Closed(app, before, _state.value, System.currentTimeMillis())
+    }
+
+    /** An app just closed with its red button, for a moment, to put back (see [undoClose]). */
+    class Closed(val app: AppId, val before: ScreensState, val after: ScreensState, val at: Long)
+
+    private val _closed = MutableStateFlow<Closed?>(null)
+    val closed: StateFlow<Closed?> = _closed.asStateFlow()
+
+    fun forgetClosed(c: Closed) { _closed.compareAndSet(c, null) }
+
+    /**
+     * Opens the app just closed again where it was. The layout goes back as it was if
+     * nothing else changed meanwhile; otherwise the app goes back on its screen (its
+     * half, if the other app is still there). It starts afresh: closing closed it.
+     */
+    fun undoClose() {
+        val c = _closed.value ?: return
+        _closed.value = null
+        if (c.app in _state.value.running) return
+        if (_state.value == c.after) { commit(c.before); return }
+        val screen = c.before.screenOf(c.app) ?: return
+        val slot = when (val was = c.before[screen]) {
+            is ScreenContent.Split -> {
+                val other = if (was.left == c.app) was.right else was.left
+                when {
+                    other !in _state.value[screen].apps -> Slot.FULL
+                    was.left == c.app -> Slot.LEFT
+                    else -> Slot.RIGHT
+                }
+            }
+            else -> Slot.FULL
+        }
+        place(c.app, DropTarget(screen, slot), confirm = false)
     }
 
     fun swap(screen: ScreenId) = commit(Screens.swap(_state.value, screen))
@@ -594,6 +630,10 @@ class ScreensController(
         val next = Screens.clamped(wanted)
         val prev = _state.value
         _state.value = next
+        // Apps that came onto the main or passenger screen: used lately.
+        val shown = { s: ScreensState -> s[ScreenId.MAIN].apps + s[ScreenId.PASSENGER].apps }
+        val before = shown(prev).toSet()
+        shown(next).filter { it !in before }.asReversed().forEach(prefs::noteOpened)
         lastLocalChange = System.currentTimeMillis()
         prefs.saveLastLayout(next)
         reconcile(prev, next)

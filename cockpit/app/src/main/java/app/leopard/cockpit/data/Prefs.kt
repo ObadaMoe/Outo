@@ -83,6 +83,9 @@ data class Layout(val name: String, val state: ScreensState)
 /** The most apps the sidebar holds (past what fits, they scroll). */
 const val DOCK_MAX = 10
 
+/** How many apps [Prefs.recents] remembers. */
+const val RECENTS_MAX = 12
+
 /** Small, synchronous store on SharedPreferences, exposed as flows. */
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("otility", Context.MODE_PRIVATE)
@@ -128,6 +131,19 @@ class Prefs(context: Context) {
     fun saveLayout(layout: Layout) {
         _layouts.value = _layouts.value.filter { it.name != layout.name } + layout
         writeLayouts()
+    }
+
+    // ---- Apps used lately ----------------------------------------------------------
+
+    private val _recents = MutableStateFlow(readList("recents"))
+    /** The apps opened lately on the main and passenger screens, the latest first. */
+    val recents: StateFlow<List<AppId>> = _recents.asStateFlow()
+
+    fun noteOpened(app: AppId) {
+        val list = (listOf(app) + _recents.value.filter { it != app }).take(RECENTS_MAX)
+        if (list == _recents.value) return
+        _recents.value = list
+        sp.edit().putString("recents", JSONArray(list.map { it.pkg }).toString()).apply()
     }
 
     // ---- The map app used last -------------------------------------------------

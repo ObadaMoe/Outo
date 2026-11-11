@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import app.leopard.cockpit.ui.SideInset
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -42,9 +44,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -73,10 +78,11 @@ import kotlin.math.roundToInt
 
 /**
  * The map widget, like CarPlay's dashboard: the map app used last, live, in the
- * pane beside the other widgets ([pane], in the Overview's pixels). Tap it and it grows to
- * fill the screen ([full]) and takes touches, with Back to come out again.
- * Hold it (or tap it while the widgets shake) for its menu. A map on the driver cluster
- * comes off it while the Overview is open, and goes back when it closes.
+ * pane beside the other widgets ([pane], in the Overview's pixels). It takes touches where
+ * it is (a drag pans the map, two fingers zoom it, a tap goes to its buttons; see
+ * [MapCardTouches]); tap it twice and it grows to fill the screen ([full]), with Back to
+ * come out again. Hold it still (or tap it while the widgets shake) for its menu. A map
+ * on the driver cluster comes off it while the Overview is open, and goes back when it closes.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -173,6 +179,31 @@ fun MapWidget(
     val corner = lerp(28.dp, 24.dp, p.value)
     val shape = RoundedCornerShape(corner)
 
+    // Small and at rest, the map takes touches where it is (not while the widgets shake,
+    // nor without the helper to pass them on: then a tap opens it up, as before).
+    val touchable = live && id != null && !(mirrored && !lent) && !editing && !expanded && settled && helper != null
+    val touches = if (touchable) {
+        val hosts = otility.screens.hosts
+        val context = LocalContext.current
+        val router = remember {
+            TouchRouter(otility.bridge, density.density, onTwoUp = {}, onTwoDown = {}, onTwoSide = {}, onTouchedPane = {})
+                .also { it.gestures = false }
+        }
+        router.targets = listOf(TouchTarget(Rect(0f, 0f, pane.width, pane.height), { hosts.displayOf(id!!) }, { cardW }, { cardH }))
+        remember(router) {
+            val vc = ViewConfiguration.get(context)
+            MapCardTouches(
+                router, vc.scaledTouchSlop.toFloat(), vc.scaledDoubleTapSlop.toFloat(),
+                onDoubleTap = { expanded = true },
+                onHold = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (!editingNow) onEditingNow(true)
+                    onMenuNow(slotNow, paneNow)
+                },
+            )
+        }
+    } else null
+
     val shake = if (editing) {
         rememberInfiniteTransition(label = "mapShake").animateFloat(
             -1f, 1f, infiniteRepeatable(tween(150, easing = LinearEasing), RepeatMode.Reverse), label = "mapShake",
@@ -234,6 +265,7 @@ fun MapWidget(
                             // blurs what's behind it: it would show the map sharp.
                             direct = !editing && nav.sheet == null,
                         )
+                        if (touchable) MapCardTouchLayer(touches!!)
                     }
                 }
             }
@@ -269,6 +301,21 @@ fun MapWidget(
         val display = id?.let { otility.screens.hosts.displayOf(it) }
         if (helper != null && display != null) otility.bridge.key(KeyEvent.KEYCODE_BACK, display) else expanded = false
     }
+}
+
+/** Over the small map: its touches, to [touches]; anything waiting ends when it goes. */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun MapCardTouchLayer(touches: MapCardTouches) {
+    val view = LocalView.current
+    DisposableEffect(touches) { onDispose { touches.dispose() } }
+    Box(
+        Modifier.fillMaxSize().pointerInteropFilter { ev ->
+            // Each move on to the map the moment it comes, not with Otility's next frame.
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) view.requestUnbufferedDispatch(ev)
+            touches.onTouch(ev)
+        },
+    )
 }
 
 /** Laid out at [w] × [h], scaled to cover the space it's given, around its middle. */

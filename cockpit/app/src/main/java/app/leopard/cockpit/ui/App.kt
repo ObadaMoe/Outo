@@ -213,7 +213,7 @@ fun OtilityApp(app: Otility) {
                 // Nor does the cluster's map, opened up: it goes back to the cluster.
                 Otility.instance.screens.closePeek()
             }
-            CompositionLocalProvider(LocalNav provides nav, LocalWindowPx provides windowPx) {
+            CompositionLocalProvider(LocalNav provides nav, LocalWindowPx provides windowPx, androidx.compose.foundation.LocalIndication provides PressIndication) {
                 Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
                     Crossfade(nav.tab, animationSpec = tween(220), label = "tab") { tab ->
                         // The Screens tab's car photo fills the screen, and it keeps its apps
@@ -269,6 +269,8 @@ fun OtilityApp(app: Otility) {
                             Modifier.align(Alignment.TopCenter).padding(start = SideInset, top = 14.dp)
                                 .windowInsetsPadding(WindowInsets.safeDrawing),
                         )
+                        // A closed app, for a moment: Undo opens it again.
+                        UndoCloseNote(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).windowInsetsPadding(WindowInsets.safeDrawing))
                         // Menus are placed in the window's pixels; this layer starts below the car's status bar.
                         val menu = nav.menu
                         ContextMenu(remember(menu, barTop) { menu?.let { it.copy(anchor = it.anchor.translate(0f, -barTop.toFloat())) } }) {
