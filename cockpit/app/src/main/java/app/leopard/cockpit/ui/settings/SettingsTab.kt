@@ -268,7 +268,8 @@ private val SettingsPage.finds: List<String>
         )
         SettingsPage.NAVIGATION -> listOf(
             "Navigation app", "Places open on", "Places from your iPhone", "Pairing code", "Show the next turn",
-            "Read the map's screen", "Turn arrows on the HUD", "Speed limit from the map", "Turn arrows on the driver cluster",
+            "Read the map's screen", "Turn arrows on the HUD", "Speed limit from the map", "Also tell driver assistance (test)",
+            "Turn arrows on the driver cluster",
             "Recent places", "Clear recent places",
         )
         SettingsPage.SOUND -> listOf(
@@ -605,6 +606,15 @@ private fun DirectionsGroup() {
                     },
                 ) {
                     Switch(s.hudSpeedLimit, { on -> app.prefs.update { it.copy(hudSpeedLimit = on) } })
+                }
+                if (s.hudSpeedLimit) {
+                    val assist by app.assist.status.collectAsState()
+                    SettingRow(
+                        "Also tell driver assistance (test)",
+                        subtitle = if (s.assistLimit) assist else "Sends the limit as BYD's own map does, 10 times a second. Off unless you're testing it.",
+                    ) {
+                        Switch(s.assistLimit, { on -> app.prefs.update { it.copy(assistLimit = on) } })
+                    }
                 }
             }
             // With the HUD's arrows on, the cluster has them anyway.

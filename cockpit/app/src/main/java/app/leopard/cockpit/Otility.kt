@@ -11,6 +11,7 @@ import app.leopard.cockpit.data.VehicleFeed
 import app.leopard.cockpit.engine.EngineLog
 import app.leopard.cockpit.engine.EngineSynth
 import app.leopard.cockpit.engine.SoundDriver
+import app.leopard.cockpit.nav.AssistLimit
 import app.leopard.cockpit.nav.ClusterTurns
 import app.leopard.cockpit.nav.HudLink
 import app.leopard.cockpit.nav.Navigator
@@ -44,6 +45,8 @@ class Otility : Application() {
     lateinit var cluster: ClusterTurns
     /** The speed limit both send: the map's, or the car's camera's newer sign. */
     lateinit var roadLimit: RoadLimit
+    /** A test (off unless switched on): that limit also to the car's driver assistance. */
+    lateinit var assist: AssistLimit
     /** New versions of Outo from GitHub. */
     lateinit var updater: Updater
     val synth = EngineSynth()
@@ -69,6 +72,7 @@ class Otility : Application() {
         roadLimit = RoadLimit()
         hud = HudLink(this, prefs, roadLimit)
         cluster = ClusterTurns(prefs, vehicle, roadLimit)
+        assist = AssistLimit(this, prefs, roadLimit)
         seedDock()
         // "Start with the car": the helper opens Otility when the car is switched on, so
         // it knows the setting (BYD force-stops Otility at switch-off; see Ignition).

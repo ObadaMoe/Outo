@@ -61,6 +61,8 @@ data class Settings(
     val hudTurns: Boolean = false,
     /** With the HUD on: send Waze's or Google Maps' speed limit for the road, in place of the car's own reading. */
     val hudSpeedLimit: Boolean = true,
+    /** A test: also send that limit to the car's driver assistance, as BYD's own map sends its limit (see AssistLimit). */
+    val assistLimit: Boolean = false,
     /** Send each turn to the driver cluster. */
     val clusterTurns: Boolean = false,
     // Engine sound
@@ -315,7 +317,7 @@ class Prefs(context: Context) {
         put("clusterCode", s.clusterCode); put("mapOnCluster", s.mapOnCluster); put("signalView", s.signalView)
         put("phoneHandoff", s.phoneHandoff); put("navApp", s.navApp)
         put("navScreen", s.navScreen?.name ?: "AUTO"); put("showDirections", s.showDirections)
-        put("readMapScreen", s.readMapScreen); put("hudTurns", s.hudTurns); put("hudSpeedLimit", s.hudSpeedLimit); put("clusterTurns", s.clusterTurns)
+        put("readMapScreen", s.readMapScreen); put("hudTurns", s.hudTurns); put("hudSpeedLimit", s.hudSpeedLimit); put("assistLimit", s.assistLimit); put("clusterTurns", s.clusterTurns)
         put("soundOn", s.soundOn); put("soundCar", s.soundCar); put("soundMode", s.soundMode.name)
         put("soundVolume", s.soundVolume.toDouble()); put("soundOutside", s.soundOutside)
         put("soundOnlyDriving", s.soundOnlyDriving); put("soundPitch", s.soundPitch.toDouble())
@@ -354,6 +356,7 @@ class Prefs(context: Context) {
             readMapScreen = b("readMapScreen", d.readMapScreen),
             hudTurns = b("hudTurns", d.hudTurns),
             hudSpeedLimit = b("hudSpeedLimit", d.hudSpeedLimit),
+            assistLimit = b("assistLimit", d.assistLimit),
             clusterTurns = b("clusterTurns", d.clusterTurns),
             soundOn = b("soundOn", d.soundOn),
             soundCar = o.optString("soundCar", d.soundCar),

@@ -39,6 +39,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - Reads the next turn from Waze or Google Maps for the Overview, the driver cluster and the head-up display.
   - On the driver cluster, Waze and Google Maps show only their map, without their own buttons and cards (**Settings › Driver Cluster › Map only**). The app runs on a hidden display wider than the cluster, and the cluster shows the part that is only map.
   - Places sent from an iPhone, over the car's Wi-Fi or the iPhone's hotspot, open in your map app.
+  - A test, off unless switched on: the map's speed limit also goes to the car's driver assistance, as BYD's own map sends its limit (**Settings › Navigation › Also tell driver assistance (test)**). What it sends is written to `outo-assist.log` in Outo's files folder.
 - **Engine sound:** a synthesized engine that follows the car's pedal and speed. Its revs glide from one speed reading to the next, so rolling along slowly doesn't step from note to note. It comes with a garage of engine presets and a Sound Studio for tuning them.
 - **Settings:** laid out like Apple's System Settings: one panel beside the sidebar, the pages on a card of their own with a search field (search any setting by name; each match says which page it's on), and each page's groups on cards raised off the panel. Light, dark or automatic appearance, accent colour and glass style; there are also pages for the screens and sidebar, the driver cluster, navigation, engine sound, startup, the car connection and integrations.
 
@@ -147,6 +148,7 @@ Version 0.5.0 is the first that updates itself. Some things only the car can con
 - the pedal, speed and temperature readings;
 - the engine sound and the outside speaker;
 - cluster and head-up display turns;
+- whether the car takes the map's speed limit from the driver-assistance test;
 - apps on the passenger screen;
 - how the glass effects perform on the car's graphics chip.
 

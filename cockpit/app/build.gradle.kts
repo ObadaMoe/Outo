@@ -14,8 +14,8 @@ android {
         minSdk = 29
         // The car runs Android 13 (API 33).
         targetSdk = 33
-        versionCode = 26
-        versionName = "0.5.12"
+        versionCode = 27
+        versionName = "0.5.13"
     }
 
     buildTypes {
