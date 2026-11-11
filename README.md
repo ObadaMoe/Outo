@@ -30,6 +30,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - Close an app with its red button and "YouTube closed · Undo" shows for a few seconds; Undo opens it again where it was.
   - Tap a display to zoom in and use its apps; tap Screens on the sidebar, press the car's Back or swipe down with two fingers to zoom out. The controls hide after a few seconds; tap the dots at the top to bring them back.
   - Zoomed in, swipe two fingers left or right to move between the displays, the way pages turn. From the main screen, two fingers right open the driver cluster's map over it at full size, to pick a place, while the main screen's app keeps playing; two fingers left put the map back on the cluster.
+  - Zoomed in, swipe one finger in from the left or right edge: a short swipe is Back inside the app. On the main screen with one app, keep going (about a fifth of the way in, until "Split View" shows) and let go: the app moves over to one half, and the other half waits for a second app, showing the ones you used lately and your pinned ones. Tap one there or on the sidebar, or drag one in. Cancel, Back or a short swipe gives the app its full screen back. While you're zoomed in, the car's own back swipe is off at the edges.
   - When an app goes full screen on the main screen (a YouTube video, say), BYD's status bar and buttons step aside too; swipe in from the top or bottom edge to bring them back for a moment.
   - Save layouts, and choose what each display opens with at startup.
 - **Apps:**

@@ -127,6 +127,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlin.math.max
 import kotlin.math.min
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Where a dragged app would land. */
 sealed interface Hover {
@@ -156,6 +164,58 @@ private fun panes(content: Rect, ratio: Float): Pair<Rect, Rect> {
     val lw = (content.width - gap) * ratio
     return Rect(content.left, content.top, content.left + lw, content.bottom) to
         Rect(content.left + lw + gap, content.top, content.right, content.bottom)
+}
+
+/** A pull in from an edge under way: its side (-1 the left, 1 the right), how far in and where (y), in the tab's pixels; [splits]: it can make room for a second app, [past] far enough in that it will. */
+private data class EdgePullAt(val side: Int, val inward: Float, val y: Float, val splits: Boolean, val past: Boolean)
+
+/** How far in a pull is Back, in dp. */
+private const val BACK_AT = 56f
+
+/** How wide a strip along each side Android's own back swipe is off over, zoomed in (wider than Otility's own [EDGE_ZONE]: whatever width the car's takes). */
+private val EDGE_EXCLUDED = 48.dp
+
+/** How far in a pull makes room for a second app: a fifth of the screen's width, and at least 150 dp. */
+private fun splitAt(width: Float, dp: Float) = max(width * 0.2f, 150f * dp)
+
+/** The room a pull makes, from how far in the finger is (a share of the width): with it up to near a half, then less and less. */
+private fun rubber(share: Float): Float = if (share <= 0.42f) share else (0.42f + (share - 0.42f) * 0.25f).coerceAtMost(0.56f)
+
+/**
+ * The sign of a pull in from an edge, beside the finger: Back's arrow, which fills in once
+ * the pull is long enough for Back; on the main screen, far enough in, "Split View" in
+ * the room the app makes, which stays once it's let go.
+ */
+@Composable
+private fun PullSign(p: EdgePullAt, w: Float, h: Float) {
+    val t = LocalTokens.current
+    val density = LocalDensity.current
+    val left = p.side < 0
+    val back = p.inward >= with(density) { BACK_AT.dp.toPx() }
+    // Comes out of the edge with the finger; Back's stops a little way in, room's stays in its middle.
+    val offset = if (p.splits) p.inward * 0.5f else min(p.inward * 0.5f, with(density) { 60.dp.toPx() })
+    val x = if (left) offset else w - offset
+    val y = p.y.coerceIn(with(density) { 60.dp.toPx() }, h - with(density) { 60.dp.toPx() })
+    val shown = (p.inward / with(density) { (BACK_AT * 0.6f).dp.toPx() }).coerceIn(0f, 1f)
+    Box(
+        Modifier
+            .layout { m, c ->
+                val pl = m.measure(Constraints())
+                layout(c.maxWidth, c.maxHeight) { pl.place((x - pl.width / 2f).roundToInt(), (y - pl.height / 2f).roundToInt()) }
+            }
+            .graphicsLayer { alpha = shown },
+    ) {
+        if (p.past) {
+            GlassChip("Split View", icon = if (left) Icons.leftHalf else Icons.rightHalf)
+        } else {
+            Box(
+                Modifier
+                    .size(46.dp)
+                    .then(if (back) Modifier.background(t.fill, Capsule) else Modifier.glass(Capsule, GlassKind.Button)),
+                contentAlignment = Alignment.Center,
+            ) { Glyph(if (left) Icons.back else Icons.chevronRight, if (back) t.onFill else t.text, size = 22.dp) }
+        }
+    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -340,6 +400,39 @@ fun ScreensTab() {
         var startupOpen by remember { mutableStateOf(false) }
         var startupBounds by remember { mutableStateOf(Rect.Zero) }
 
+        // ---- One finger in from the left or right edge, zoomed in ------------------
+        // A short pull is Back, inside the app. On the main screen with one app, a longer
+        // one makes room beside it for a second, as on an iPad: the app moves over as the
+        // finger comes in, and once it's let go, the half the app left waits for another
+        // ([waiting]): the apps used lately and the pinned ones, as on an empty screen, or
+        // any from the sidebar. Back (or a short pull, or Cancel) gives the room back.
+        /** A pull under way, in the tab's pixels; null when none. */
+        var pull by remember { mutableStateOf<EdgePullAt?>(null) }
+        /** The half of the main screen that waits for a second app; null when none does. */
+        var waiting by remember { mutableStateOf<Slot?>(null) }
+        /** How much of the main screen its app has made room on, 0 to a half, on [roomSide] (-1 the left, 1 the right). */
+        val room = remember { Animatable(0f) }
+        var roomSide by remember { mutableIntStateOf(-1) }
+        val mainApp = (state[ScreenId.MAIN] as? ScreenContent.Single)?.app
+        fun giveRoomBack() {
+            waiting = null
+            scope.launch { room.animateTo(0f, spring(dampingRatio = 0.86f, stiffness = 420f)) }
+        }
+        // A pull cut short (zoomed out, or another screen, mid-pull): nothing of it stays.
+        LaunchedEffect(settled, focus) {
+            if (!settled || focus == null) {
+                pull = null
+                if (waiting == null && room.value > 0f) room.animateTo(0f, spring(dampingRatio = 0.86f, stiffness = 420f))
+            }
+        }
+        // Gone with the app it was beside (closed, or another put there: a split now), or out of the main screen.
+        LaunchedEffect(focus, mainApp) {
+            if (focus != ScreenId.MAIN || mainApp == null) {
+                if (waiting != null) waiting = null
+                room.snapTo(0f)
+            }
+        }
+
         // ---- Straight to the car's screen ---------------------------------------
         // Still, the screens' pictures go straight to the car's screen (see HostFeed):
         // zoomed in, and on the dashboard with live previews. Otility then draws nothing
@@ -392,12 +485,12 @@ fun ScreensTab() {
         // The screen in view lost its last app (closed here, or it crashed): the sidebar
         // comes back to pick another, as when zooming into an empty screen.
         LaunchedEffect(focusedIdle) { if (focusedIdle) { chrome = true; sidebarOpen = true } }
-        LaunchedEffect(focus, chrome, chromeTick, drag.app, menu, dividerDragging, focusedIdle, armed, settings.gestures) {
+        LaunchedEffect(focus, chrome, chromeTick, drag.app, menu, dividerDragging, focusedIdle, armed, settings.gestures, waiting) {
             val wait = settings.autoHideSeconds
             // With gestures off nothing could bring hidden controls back (that's two
             // fingers up), so they stay. They also stay while a close button is armed.
             if (focus != null && chrome && wait > 0 && settings.gestures && drag.app == null && menu == null &&
-                !dividerDragging && !focusedIdle && armed == null
+                !dividerDragging && !focusedIdle && armed == null && waiting == null
             ) {
                 delay(wait * 1000L)
                 chrome = false
@@ -558,8 +651,11 @@ fun ScreensTab() {
         SideEffect {
             nav.dockLift = { a ->
                 dragCallbacks(a, onTap = {
+                    val wait = waiting
+                    // A half waiting for an app: it goes there.
+                    if (wait != null && focus == ScreenId.MAIN && a.id != mainApp) controller.place(a.id, DropTarget(ScreenId.MAIN, wait))
                     // If the app is already somewhere, asks whether to move it or go to it.
-                    controller.tap(a.id, focus ?: ScreenId.MAIN) { focus = it }
+                    else controller.tap(a.id, focus ?: ScreenId.MAIN) { focus = it }
                     poke()
                 }) { sidebarMenu(a) }
             }
@@ -604,8 +700,10 @@ fun ScreensTab() {
         fun hostSize(app: AppId): Pair<Int, Int> {
             // Between the car's bars.
             val appsH = (h - barTop - barBottom).coerceAtLeast(h / 2f).toInt()
-            val s = mainSplit ?: return w.toInt() to appsH
             val gap = Screens.splitGap(w)
+            // Beside a half waiting for a second app: a half already.
+            if (mainSplit == null && waiting != null && app == mainApp) return ((w - gap) * 0.5f).toInt() to appsH
+            val s = mainSplit ?: return w.toInt() to appsH
             val ratio = Screens.clampRatio(s.ratio)
             val share = if (s.left == app) ratio else 1f - ratio
             return ((w - gap) * share).toInt() to appsH
@@ -633,6 +731,8 @@ fun ScreensTab() {
                         ratio = if (s == ScreenId.MAIN) shownRatio else 0.5f,
                         appsById = appsById, connected = connected, live = previews || s == liveScreen, display = display,
                         settings = settings, hostSize = ::hostSize, direct = direct,
+                        room = if (s == ScreenId.MAIN) ({ room.value }) else ({ 0f }),
+                        roomSide = roomSide, roomFilled = waiting != null,
                     )
                 }
                 Image(
@@ -713,12 +813,57 @@ fun ScreensTab() {
                 val f = focus!!
                 val cam = camera()
                 router.gestures = settings.gestures
+                val mainWidth = cam.map(geo.apps(ScreenId.MAIN), w, h).width
+                // Room for a second app: on the main screen, beside its only app.
+                val splits = f == ScreenId.MAIN && state[f] is ScreenContent.Single && waiting == null && peek == null
+                router.edgePull = EdgePull(
+                    pulled = { side, inward, y ->
+                        val past = splits && inward >= splitAt(mainWidth, density.density)
+                        val was = pull
+                        if (was != null && past != was.past) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        pull = EdgePullAt(side, inward, y, splits, past)
+                        if (splits && mainWidth > 0f) {
+                            roomSide = side
+                            // A little at first (it may be Back), then with the finger once it's room.
+                            val share = inward / mainWidth
+                            val target = if (past) rubber(share) else share * 0.3f
+                            scope.launch { room.animateTo(target, spring(dampingRatio = 1f, stiffness = 1400f)) }
+                        }
+                    },
+                    released = { side, inward ->
+                        val was = pull
+                        pull = null
+                        when {
+                            // Let go far enough in: the room stays, and waits for an app.
+                            was != null && was.splits && inward >= splitAt(mainWidth, density.density) -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                waiting = if (side < 0) Slot.LEFT else Slot.RIGHT
+                                scope.launch { room.animateTo(0.5f, spring(dampingRatio = 0.84f, stiffness = 380f)) }
+                                chrome = true; sidebarOpen = true; chromeTick++
+                                false
+                            }
+                            // A half waiting: Back gives the room back.
+                            waiting != null -> {
+                                if (inward >= BACK_AT * density.density) giveRoomBack()
+                                false
+                            }
+                            else -> {
+                                if (room.value > 0f) scope.launch { room.animateTo(0f, spring(dampingRatio = 0.86f, stiffness = 420f)) }
+                                inward >= BACK_AT * density.density
+                            }
+                        }
+                    },
+                )
                 router.targets = when (f) {
                     ScreenId.MAIN -> {
                         val c = cam.map(geo.apps(f), w, h)
                         when (val m = state[f]) {
                             is ScreenContent.Single -> listOf(
-                                TouchTarget(c, { controller.hosts.displayOf(m.app) }, { hostSize(m.app).first }, { hostSize(m.app).second }),
+                                TouchTarget(
+                                    // Beside a waiting half: its own half.
+                                    waiting?.let { side -> panes(c, 0.5f).let { (l, r) -> if (side == Slot.LEFT) r else l } } ?: c,
+                                    { controller.hosts.displayOf(m.app) }, { hostSize(m.app).first }, { hostSize(m.app).second },
+                                ),
                             )
                             is ScreenContent.Split -> {
                                 val (l, r) = panes(c, shownRatio)
@@ -757,6 +902,29 @@ fun ScreensTab() {
                     onOpen = { app -> controller.tap(app, f) { focus = it } },
                     onAll = { nav.tab = app.leopard.cockpit.data.Tab.APPS },
                     modifier = Modifier.at { camera().map(geo.apps(f), w, h) },
+                )
+            }
+
+            // ---- A pull in from an edge: Back, or (far enough in) room for a second app ---
+            pull?.let { p -> PullSign(p, w, h) }
+
+            // ---- The half waiting for a second app: the ones used lately, and pinned ---
+            val wait = waiting
+            if (wait != null && focus == ScreenId.MAIN && settled && drag.app == null && mainApp != null) {
+                EmptyScreenApps(
+                    ScreenId.MAIN, appsById,
+                    onOpen = { app -> controller.place(app, DropTarget(ScreenId.MAIN, wait)) },
+                    onAll = null,
+                    modifier = Modifier.at {
+                        val c = camera().map(geo.apps(ScreenId.MAIN), w, h)
+                        val half = panes(c, 0.5f).let { (l, r) -> if (wait == Slot.LEFT) l else r }
+                        // In the part of the left half the sidebar (out while it waits) leaves.
+                        val side = nav.sidebarBounds
+                        if (wait == Slot.LEFT && sidebarOpen && side.width > 0f) half.copy(left = max(half.left, side.right)) else half
+                    },
+                    title = "Open beside ${appsById[mainApp]?.label ?: "it"}",
+                    exclude = mainApp,
+                    onCancel = { giveRoomBack() },
                 )
             }
 
@@ -1055,6 +1223,14 @@ fun ScreensTab() {
 
         // ---- Back: the car's Back button zooms out; the app's own Back is in the controls
         BackHandler(enabled = focus != null) { focus = null }
+        // Registered after: a half waiting for an app goes before zooming out.
+        BackHandler(enabled = waiting != null) { giveRoomBack() }
+        // Zoomed in, a finger in from the left or right edge is Otility's (Back inside the app,
+        // or room for a second app), not the car's own Back: Android's back swipe is off there.
+        if (focus != null && settings.gestures) {
+            Box(Modifier.align(Alignment.CenterStart).width(EDGE_EXCLUDED).fillMaxHeight().systemGestureExclusion())
+            Box(Modifier.align(Alignment.CenterEnd).width(EDGE_EXCLUDED).fillMaxHeight().systemGestureExclusion())
+        }
     }
 }
 
@@ -1072,6 +1248,11 @@ private fun Tile(
     settings: Settings,
     hostSize: (AppId) -> Pair<Int, Int>,
     direct: Boolean,
+    // The room its only app makes beside it (a pull in from an edge, a half waiting), 0 to
+    // a half, on [roomSide]; [roomFilled]: the app is resized to its part (else it slides over).
+    room: () -> Float = { 0f },
+    roomSide: Int = -1,
+    roomFilled: Boolean = false,
 ) {
     val hole = geo.hole(screen)
     val c = geo.content(screen)
@@ -1083,11 +1264,16 @@ private fun Tile(
                 else -> {
                     // The apps' part of the screen (clear of the car's bars on the main one).
                     val local = geo.apps(screen).translate(-c.left, -c.top)
-                    if (content is ScreenContent.Split) SplitBackground()
+                    val made = if (content is ScreenContent.Single) room() else 0f
+                    if (content is ScreenContent.Split || made > 0f) SplitBackground()
                     val round = c.width * 0.014f
                     val rects: Map<AppId, Rect> = when (content) {
                         is ScreenContent.Split -> panes(local, ratio).let { (l, r) -> mapOf(content.left to l, content.right to r) }
-                        is ScreenContent.Single -> mapOf(content.app to local)
+                        is ScreenContent.Single -> mapOf(
+                            content.app to if (made <= 0f) local
+                            else if (roomSide < 0) panes(local, made).second
+                            else panes(local, 1f - made).first,
+                        )
                         else -> emptyMap()
                     }
                     content.apps.forEach { id ->
@@ -1098,12 +1284,23 @@ private fun Tile(
                                 else smoothstep(Screens.MAX_RATIO, Screens.DISMISS_RIGHT, ratio)
                             } else 0f
                             val shape = when {
+                                content is ScreenContent.Single && made > 0f ->
+                                    if (roomSide < 0) RoundedCornerShape(round, 0f, 0f, round) else RoundedCornerShape(0f, round, round, 0f)
                                 content !is ScreenContent.Split -> RectangleShape
                                 content.left == id -> RoundedCornerShape(0f, round, round, 0f)
                                 else -> RoundedCornerShape(round, 0f, 0f, round)
                             }
                             Box(Modifier.at(r).clip(shape)) {
-                                Pane(screen, id, appsById[id], live, hostSize, direct)
+                                if (made > 0f && !roomFilled) {
+                                    // Still its full size, slid over: the side going off the screen is cut.
+                                    Box(
+                                        Modifier
+                                            .wrapContentSize(if (roomSide < 0) Alignment.TopStart else Alignment.TopEnd, unbounded = true)
+                                            .requiredSize(with(LocalDensity.current) { local.width.toDp() }, with(LocalDensity.current) { local.height.toDp() }),
+                                    ) { Pane(screen, id, appsById[id], live, hostSize, direct) }
+                                } else {
+                                    Pane(screen, id, appsById[id], live, hostSize, direct)
+                                }
                                 if (dim > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f * dim)))
                             }
                         }

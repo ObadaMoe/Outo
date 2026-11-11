@@ -26,6 +26,7 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import app.leopard.cockpit.car.CarBridge
@@ -141,6 +142,9 @@ fun Modifier.liftable(key: Any?, callbacks: LiftCallbacks): Modifier {
         }
 }
 
+/** How far in from the left or right edge a touch counts as one from the edge, in dp. */
+const val EDGE_ZONE = 26f
+
 /**
  * Sends this area's touches through [router]. Android normally saves a finger's moves
  * up and hands them over with Otility's next frame; here each one goes on to the app
@@ -152,7 +156,7 @@ fun Modifier.routeTouches(router: TouchRouter): Modifier {
     val view = LocalView.current
     // Gone in the middle of a touch (zoomed out, say): the app has the touch ended too.
     DisposableEffect(router) { onDispose { router.cancelPress() } }
-    return pointerInteropFilter { ev ->
+    return onSizeChanged { router.areaWidth = it.width.toFloat() }.pointerInteropFilter { ev ->
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) view.requestUnbufferedDispatch(ev)
         router.onTouch(ev)
     }
@@ -163,6 +167,17 @@ fun Modifier.routeTouches(router: TouchRouter): Modifier {
  * it. [left] and [top] are where the rectangle's picture starts on that display (a map
  * on the cluster shows only part of its own).
  */
+/**
+ * One finger pulled in from the left or right edge of a zoomed-in screen, followed:
+ * [pulled] as it comes in ([side] -1 from the left, 1 from the right; [inward] how far in
+ * and [y] where, in the area's pixels), then [released] (an [inward] of 0 when the touch
+ * was taken away). [released] says whether the app under the finger gets Back.
+ */
+class EdgePull(
+    val pulled: (side: Int, inward: Float, y: Float) -> Unit,
+    val released: (side: Int, inward: Float) -> Boolean,
+)
+
 class TouchTarget(
     val rect: Rect, val displayId: () -> Int?, val width: () -> Int, val height: () -> Int,
     val left: Float = 0f, val top: Float = 0f,
@@ -175,7 +190,9 @@ class TouchTarget(
  *  - two fingers up: show the controls and the sidebar
  *  - two fingers down: back out (to all three screens)
  *  - two fingers left or right: the next screen, the way pages follow the fingers
- *  - one finger in from the left edge: Back, inside the app
+ *  - one finger in from the left edge: Back, inside the app; with [edgePull], from
+ *    either edge, followed as it comes in (a short pull is Back, a long one is the
+ *    tab's: room for a second app)
  *
  * Once a gesture is Otility's, the app gets a cancel, like when a system
  * gesture takes over. So it does when Android takes the touch away from Otility
@@ -193,6 +210,10 @@ class TouchRouter(
 ) {
     var targets: List<TouchTarget> = emptyList()
     var gestures: Boolean = true
+    /** Pulls in from either edge, followed (see [EdgePull]); without it, only the left edge's Back. */
+    var edgePull: EdgePull? = null
+    /** The area's width: where its right edge is. */
+    var areaWidth: Float = 0f
 
     private var target: TouchTarget? = null
     private var ours = false
@@ -202,6 +223,11 @@ class TouchRouter(
     private var startSpan = 0f
     private var startTime = 0L
     private var edge: MotionEvent? = null
+    /** The edge [edge] is at: -1 the left, 1 the right. */
+    private var edgeSide = -1
+    /** A pull in from an edge is under way, from [pullFrom] (x). */
+    private var pulling = false
+    private var pullFrom = 0f
     /** The app's side of the touch going on: the last event it was sent, and where, while a finger is down for it. */
     private var pressed: MotionEvent? = null
     private var pressedOn = 0
@@ -211,19 +237,30 @@ class TouchRouter(
             MotionEvent.ACTION_DOWN -> {
                 // The last touch never came to an end for the app: end it before this one starts.
                 edge?.recycle(); edge = null
+                if (pulling) endPull(0f)
                 cancelPress()
                 ours = false
                 multi = 0
                 val i = targets.indexOfFirst { it.rect.contains(Offset(ev.x, ev.y)) }
                 target = targets.getOrNull(i) ?: targets.minByOrNull { (it.rect.center - Offset(ev.x, ev.y)).getDistance() }
                 if (i >= 0) onTouchedPane(i)
-                if (gestures && ev.x < 22 * dp) {
+                val zone = EDGE_ZONE * dp
+                val side = when {
+                    !gestures -> 0
+                    ev.x < zone -> -1
+                    edgePull != null && areaWidth > 0f && ev.x > areaWidth - zone -> 1
+                    else -> 0
+                }
+                if (side != 0) {
                     edge = MotionEvent.obtain(ev)
+                    edgeSide = side
                     return true
                 }
                 forward(ev)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                // A second finger ends a pull (and the touch stays Otility's).
+                if (pulling) { endPull(0f); return true }
                 flushEdge()
                 if (gestures && ev.pointerCount == 2) {
                     multi = ev.pointerCount
@@ -233,6 +270,27 @@ class TouchRouter(
                 if (!ours) forward(ev)
             }
             MotionEvent.ACTION_MOVE -> {
+                if (pulling) {
+                    edgePull?.pulled(edgeSide, (ev.x - pullFrom) * -edgeSide, ev.y)
+                    return true
+                }
+                val pull = edgePull
+                if (pull != null) edge?.let { down ->
+                    val inward = (ev.x - down.x) * -edgeSide
+                    val dy = ev.y - down.y
+                    if (inward > 12 * dp && abs(dy) < inward) {
+                        // In from the edge: the tab follows it; the app has none of it.
+                        pullFrom = down.x
+                        down.recycle(); edge = null
+                        ours = true
+                        pulling = true
+                        pull.pulled(edgeSide, inward, ev.y)
+                    } else if (hypot(ev.x - down.x, dy) > 12 * dp) {
+                        flushEdge()
+                        forward(ev)
+                    }
+                    return true
+                }
                 edge?.let { down ->
                     val dx = ev.x - down.x
                     val dy = ev.y - down.y
@@ -265,19 +323,28 @@ class TouchRouter(
             }
             MotionEvent.ACTION_POINTER_UP -> if (!ours) forward(ev)
             MotionEvent.ACTION_UP -> {
-                if (edge != null) { flushEdge(); forward(ev) } else if (!ours) forward(ev)
+                if (pulling) endPull((ev.x - pullFrom) * -edgeSide)
+                else if (edge != null) { flushEdge(); forward(ev) } else if (!ours) forward(ev)
                 ours = false; multi = 0
             }
             MotionEvent.ACTION_CANCEL -> {
                 // Not passed on as it is: Compose's own cancel (when Android takes the touch
                 // away) names no device or touch screen, and an app doesn't take it as one.
                 edge?.recycle(); edge = null
+                if (pulling) endPull(0f)
                 cancelPress()
                 ours = false; multi = 0
             }
             else -> if (!ours) forward(ev)
         }
         return true
+    }
+
+    /** The pull is over, [inward] in (0: taken away): Back for the app under it, if the tab says so. */
+    private fun endPull(inward: Float) {
+        pulling = false
+        val back = edgePull?.released(edgeSide, inward) ?: false
+        if (back) target?.displayId?.invoke()?.let { bridge.key(KeyEvent.KEYCODE_BACK, it) }
     }
 
     private fun takeOver() {
