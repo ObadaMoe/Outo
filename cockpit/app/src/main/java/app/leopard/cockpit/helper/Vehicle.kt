@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
 import java.lang.reflect.Method
+import kotlin.math.roundToInt
 
 /**
  * Reads car values for the Overview and the engine sound.
@@ -125,7 +126,41 @@ internal object Vehicle {
             if (v <= -9999) continue
             out.put(r.keys[i], v)
         }
+        fineSpeed()?.let { out.put("speedFine", (it * 10).roundToInt()) }
         return out
+    }
+
+    /** BYD's speed device, for [fineSpeed]: the device, its getDouble, its type and the speed's id. */
+    private class Fine(val device: Any, val method: Method, val type: Int, val id: Int)
+
+    private var fine: Fine? = null
+    private var fineTry = 0L
+
+    /**
+     * The car's speed to a fraction of a km/h, as BYD's own speed device gives it
+     * (BYDAutoSpeedDevice.getCurrentSpeed: SPEED_AUTO_SPEED, a double). "speed" above is
+     * the speedometer's whole km/h. Null when the car doesn't have it, as on the emulator;
+     * tried again every few seconds, as the reader is.
+     */
+    private fun fineSpeed(): Double? {
+        val f = fine ?: run {
+            val now = SystemClock.uptimeMillis()
+            if (fineTry != 0L && now - fineTry < 5_000) return null
+            fineTry = now
+            runCatching {
+                val c = Class.forName("android.hardware.bydauto.speed.BYDAutoSpeedDevice")
+                val device = c.getMethod("getInstance", Context::class.java).invoke(null, ShellContext.instance) ?: return null
+                val type = c.getDeclaredField("mDeviceType").apply { isAccessible = true }.getInt(null)
+                val id = featureId("SPEED_AUTO_SPEED") ?: return null
+                // The device's own getDouble, which getCurrentSpeed calls (without its log line).
+                val get = Class.forName("android.hardware.bydauto.AbsBYDAutoDevice")
+                    .getDeclaredMethod("getDouble", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                    .apply { isAccessible = true }
+                Fine(device, get, type, id)
+            }.getOrNull()?.also { fine = it } ?: return null
+        }
+        // Out of range: the car's "no value" (about -2.1 billion).
+        return runCatching { f.method.invoke(f.device, f.type, f.id) as? Double }.getOrNull()?.takeIf { it in 0.0..400.0 }
     }
 
     /**

@@ -1,5 +1,6 @@
 package app.leopard.cockpit.engine
 
+import android.os.SystemClock
 import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.data.Prefs
@@ -9,8 +10,10 @@ import app.leopard.cockpit.data.VehicleFeed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.pow
@@ -25,16 +28,18 @@ class SoundDriver(
     private val prefs: Prefs,
     private val feed: VehicleFeed,
     private val bridge: CarBridge,
+    private val log: EngineLog? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CrashLog.survive)
 
     /** The Sound Studio is open and playing its own preview. */
     val studioOpen = MutableStateFlow(false)
 
-    private var live = false
+    @Volatile private var live = false
     private var outsideOn = false
     private var gear = 1
     private var started = false
+    private val glide = SpeedGlide()
 
     fun start() {
         if (started) return
@@ -42,6 +47,15 @@ class SoundDriver(
         scope.launch {
             combine(prefs.settings, feed.data, studioOpen) { s, v, studio -> Triple(s, v, studio) }
                 .collect { (s, v, studio) -> update(s, v, studio) }
+        }
+        // The speed glides between the car's readings (SpeedGlide), and a reading that
+        // doesn't change doesn't come again: so the revs are worked out on a clock of
+        // their own while the sound plays.
+        scope.launch {
+            while (isActive) {
+                if (live) follow(feed.data.value)
+                delay(FOLLOW_MS)
+            }
         }
     }
 
@@ -55,19 +69,21 @@ class SoundDriver(
         synth.volume = s.soundVolume
     }
 
+    @Synchronized
     private fun update(s: Settings, v: VehicleData, studio: Boolean) {
         apply(s)
         feed.fast = s.soundOn && bridge.connected
         val shouldPlay = s.soundOn && bridge.connected && !v.isEmpty && (!s.soundOnlyDriving || v.moving) && !studio
         if (shouldPlay) {
             synth.external = true
-            val pedal = v.pedal ?: 0f
-            synth.pedal = pedal
-            synth.externalRpm = virtualRpm(synth.spec, (v.speedKmh ?: 0).toFloat(), pedal, parked = v.gear == "P" || v.gear == "N")
-            if (!synth.isPlaying) synth.start()
+            if (!live) log?.note("engine sound on: ${synth.spec.id}, pitch ${s.soundPitch}")
             live = true
+            follow(v)
+            if (!synth.isPlaying) synth.start()
         } else if (live) {
             live = false
+            glide.reset()
+            log?.note("engine sound off")
             if (!studio) synth.stop()
         }
         val wantOutside = live && s.soundOutside
@@ -77,6 +93,23 @@ class SoundDriver(
             outsideOn = wantOutside
             bridge.exteriorSpeaker(wantOutside)
         }
+    }
+
+    /** The revs and pedal for the car's latest readings [v], with the speed gliding to them. */
+    @Synchronized
+    private fun follow(v: VehicleData) {
+        if (!live) return
+        val pedal = v.pedal ?: 0f
+        synth.pedal = pedal
+        val fine = v.speedFineKmh
+        val speed = glide.next(
+            fine ?: (v.speedKmh ?: 0).toFloat(),
+            SystemClock.elapsedRealtime(),
+            if (fine != null) SpeedGlide.FINE else SpeedGlide.WHOLE,
+        )
+        val rpm = virtualRpm(synth.spec, speed, pedal, parked = v.gear == "P" || v.gear == "N")
+        synth.externalRpm = rpm
+        log?.reading(v, speed, rpm, gear)
     }
 
     /**
@@ -101,5 +134,10 @@ class SoundDriver(
         while (rpmIn(gear) > up && gear < n) gear++
         while (rpmIn(gear) < down && gear > 1) gear--
         return rpmIn(gear).coerceIn(idle, red)
+    }
+
+    private companion object {
+        /** How often the revs follow the car while the sound plays (the car is read every 100 ms). */
+        const val FOLLOW_MS = 40L
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.LocalDate
+import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -27,6 +28,17 @@ data class VehicleData(val raw: Map<String, Int> = emptyMap(), val pedalTop: Int
     val isEmpty: Boolean get() = raw.isEmpty()
 
     val speedKmh: Int? get() = i("speed")?.takeIf { it in 0..400 }
+
+    /**
+     * The speed to a tenth of a km/h, from BYD's speed device, where the car has it
+     * ([speedKmh] is the speedometer's whole km/h). Only when it agrees with the
+     * speedometer, which reads a little high, so a value in other units is never used.
+     */
+    val speedFineKmh: Float? get() {
+        val fine = i("speedFine")?.takeIf { it in 0..4000 }?.let { it / 10f } ?: return null
+        val whole = speedKmh ?: return null
+        return fine.takeIf { abs(it - whole) <= max(3f, whole * 0.1f) }
+    }
     val motorRpm: Int? get() = i("motorRpm")
     val soc: Int? get() = i("soc")?.takeIf { it in 0..100 }
     val elecRangeKm: Int? get() = i("elecRange")?.takeIf { it in 0..3000 }

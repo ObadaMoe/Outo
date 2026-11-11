@@ -8,6 +8,7 @@ import app.leopard.cockpit.car.HostManager
 import app.leopard.cockpit.data.AppCatalog
 import app.leopard.cockpit.data.Prefs
 import app.leopard.cockpit.data.VehicleFeed
+import app.leopard.cockpit.engine.EngineLog
 import app.leopard.cockpit.engine.EngineSynth
 import app.leopard.cockpit.engine.SoundDriver
 import app.leopard.cockpit.nav.ClusterTurns
@@ -59,7 +60,7 @@ class Otility : Application() {
         bridge = CarBridge()
         screens = ScreensController(prefs, catalog, bridge, HostManager(bridge, getSharedPreferences("hosts", MODE_PRIVATE)))
         vehicle = VehicleFeed(this, bridge)
-        sound = SoundDriver(synth, prefs, vehicle, bridge)
+        sound = SoundDriver(synth, prefs, vehicle, bridge, EngineLog(getExternalFilesDir(null) ?: filesDir))
         navigator = Navigator(this, prefs, catalog, screens)
         screens.mapApp = { navigator.mapApp() }
         screens.clusterApp = { navigator.navApp() }

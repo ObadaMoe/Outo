@@ -25,4 +25,16 @@ class VehicleDataTest {
     }
 
     @Test fun aCarThatReportsUpTo100KeepsItsScale() = assertEquals(0.3f, pedal(30, 100), 0.001f)
+
+    private fun fine(whole: Int?, tenths: Int) =
+        VehicleData(listOfNotNull(whole?.let { "speed" to it }, "speedFine" to tenths).toMap()).speedFineKmh
+
+    @Test fun theFineSpeedInTenths() = assertEquals(15.3f, fine(15, 153)!!, 0.001f)
+
+    @Test fun theSpeedometerReadsALittleHigh() = assertEquals(57.5f, fine(60, 575)!!, 0.001f)
+
+    /** In other units (m/s, say) it disagrees with the speedometer, and isn't used. */
+    @Test fun aFineSpeedInOtherUnitsIsLeftOut() = assertNull(fine(60, 167))
+
+    @Test fun noFineSpeedWithoutTheSpeedometer() = assertNull(fine(null, 153))
 }

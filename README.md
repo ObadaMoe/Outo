@@ -39,7 +39,7 @@ A CarPlay-style cockpit app for the BYD Leopard 5 (Fang Cheng Bao Bao 5) head un
   - Reads the next turn from Waze or Google Maps for the Overview, the driver cluster and the head-up display.
   - On the driver cluster, Waze and Google Maps show only their map, without their own buttons and cards (**Settings › Driver Cluster › Map only**). The app runs on a hidden display wider than the cluster, and the cluster shows the part that is only map.
   - Places sent from an iPhone, over the car's Wi-Fi or the iPhone's hotspot, open in your map app.
-- **Engine sound:** a synthesized engine that follows the car's pedal and speed. It comes with a garage of engine presets and a Sound Studio for tuning them.
+- **Engine sound:** a synthesized engine that follows the car's pedal and speed. Its revs glide from one speed reading to the next, so rolling along slowly doesn't step from note to note. It comes with a garage of engine presets and a Sound Studio for tuning them.
 - **Settings:** laid out like Apple's System Settings: one panel beside the sidebar, the pages on a card of their own with a search field (search any setting by name; each match says which page it's on), and each page's groups on cards raised off the panel. Light, dark or automatic appearance, accent colour and glass style; there are also pages for the screens and sidebar, the driver cluster, navigation, engine sound, startup, the car connection and integrations.
 
 ## How it works
@@ -56,10 +56,11 @@ The helper restarts itself when Outo is updated. If Outo closes, the helper keep
 
 With **Start with the car** on, the helper also opens Outo when the car is switched on. For the next minute, if BYD's home screen comes up over Outo by itself, Outo goes back in front. If you pressed something just before (BYD's home button, say), the helper leaves it. It never goes over another app, such as the reversing camera. If Outo closes by itself while it's on screen and the car is on (a crash or a freeze), the helper opens it again, up to three times in five minutes. A force stop, an update or the car switching off doesn't count.
 
-After a drive, two logs say what happened:
+After a drive, three logs say what happened:
 
 - `/data/local/tmp/outo-front.log`: what came to the front after the car started, and each time the helper opened Outo, with why.
 - `/sdcard/Android/data/app.leopard.cockpit/files/outo-closed.log`: how Outo closed each time, and any error it caught and kept going after.
+- `/sdcard/Android/data/app.leopard.cockpit/files/outo-engine.log`: while the engine sound plays, the car's speed, pedal and gear readings and the revs they gave, to set beside a recording of it.
 
 ## Requirements
 
