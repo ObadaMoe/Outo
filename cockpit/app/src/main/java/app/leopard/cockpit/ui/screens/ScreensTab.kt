@@ -195,7 +195,8 @@ private fun PullSign(p: EdgePullAt, w: Float, h: Float) {
     // Comes out of the edge with the finger; Back's stops a little way in, room's stays in its middle.
     val offset = if (p.splits) p.inward * 0.5f else min(p.inward * 0.5f, with(density) { 60.dp.toPx() })
     val x = if (left) offset else w - offset
-    val y = p.y.coerceIn(with(density) { 60.dp.toPx() }, h - with(density) { 60.dp.toPx() })
+    val margin = with(density) { 60.dp.toPx() }
+    val y = p.y.coerceIn(margin, (h - margin).coerceAtLeast(margin))
     val shown = (p.inward / with(density) { (BACK_AT * 0.6f).dp.toPx() }).coerceIn(0f, 1f)
     Box(
         Modifier

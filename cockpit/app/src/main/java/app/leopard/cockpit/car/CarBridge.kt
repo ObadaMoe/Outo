@@ -4,6 +4,7 @@ import android.os.IBinder
 import android.util.Log
 import android.view.MotionEvent
 import android.view.Surface
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.helper.IOtilityHelper
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.ScreenId
@@ -95,7 +96,7 @@ data class CarSnapshot(
 @OptIn(ExperimentalCoroutinesApi::class)
 class CarBridge {
     private val lane = Dispatchers.IO.limitedParallelism(1)
-    val scope = CoroutineScope(SupervisorJob() + lane)
+    val scope = CoroutineScope(SupervisorJob() + lane + CrashLog.survive)
 
     val helper: IOtilityHelper? get() = HelperConnection.current
     val connected: Boolean get() = helper?.asBinder()?.isBinderAlive == true

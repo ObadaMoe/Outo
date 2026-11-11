@@ -3,6 +3,7 @@ package app.leopard.cockpit.car
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.helper.HelperMain
 import dadb.AdbKeyPair
 import dadb.Dadb
@@ -50,7 +51,7 @@ object HelperLauncher {
     val mainUser: Boolean get() = android.os.Process.myUid() / 100_000 == 0
 
     /** Otility's own lane for starting the helper, alive as long as Otility is. */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CrashLog.survive)
 
     /**
      * Starts the helper unless it's already connected. [open] also brings Otility to the

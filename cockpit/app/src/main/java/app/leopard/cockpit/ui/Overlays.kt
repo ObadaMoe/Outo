@@ -273,7 +273,7 @@ fun ContextMenu(request: MenuRequest?, onDismiss: () -> Unit) {
             },
             modifier = Modifier.fillMaxSize(),
         ) { measurables, constraints ->
-            val card = measurables.first().measure(Constraints(maxWidth = constraints.maxWidth, maxHeight = constraints.maxHeight - edge * 2))
+            val card = measurables.first().measure(Constraints(maxWidth = constraints.maxWidth, maxHeight = (constraints.maxHeight - edge * 2).coerceAtLeast(0)))
             val maxX = constraints.maxWidth - card.width - edge
             val maxY = constraints.maxHeight - card.height - edge
             val above = r.anchor.top - gap - card.height >= edge
@@ -283,7 +283,7 @@ fun ContextMenu(request: MenuRequest?, onDismiss: () -> Unit) {
             val right = r.anchor.right.roundToInt() + gap
             val left = r.anchor.left.roundToInt() - gap - card.width
             val besideY = (r.anchor.center.y.roundToInt() - card.height / 2).coerceIn(edge, maxY.coerceAtLeast(edge))
-            val centerX = (r.anchor.center.x.roundToInt() - card.width / 2).coerceIn(edge, maxX)
+            val centerX = (r.anchor.center.x.roundToInt() - card.width / 2).coerceIn(edge, maxX.coerceAtLeast(edge))
             val (x, y) = when {
                 above -> { origin = TransformOrigin(0.5f, 1f); centerX to r.anchor.top.roundToInt() - gap - card.height }
                 below -> { origin = TransformOrigin(0.5f, 0f); centerX to r.anchor.bottom.roundToInt() + gap }

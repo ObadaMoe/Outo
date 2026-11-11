@@ -5,6 +5,7 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -18,6 +19,8 @@ import java.util.Locale
  * - At each start, how Android says the last Outo ended: a crash, a native crash, a
  *   freeze (with its trace), memory, or a stop (BYD stops it at switch-off). Android
  *   keeps only a few of these, and a few drives push the one that matters out.
+ *
+ * - Errors in background work that [survive] caught: Outo kept going without that piece.
  *
  * Read only by people; Outo itself never acts on it.
  */
@@ -40,6 +43,16 @@ object CrashLog {
         }
         // Off the main thread: an ANR's trace can be long.
         Thread({ runCatching { lastExits(context) }.onFailure { Log.w(TAG, "exit reasons", it) } }, "otility-exits").start()
+    }
+
+    /**
+     * For Outo's background work (reading the car, the cluster, the app list, updates): an
+     * error there is written down and only that piece of work stops; Outo stays open.
+     * Without it, any one of them would close Outo on the road.
+     */
+    val survive = CoroutineExceptionHandler { _, e ->
+        Log.w(TAG, "background work failed", e)
+        runCatching { write("caught in the background (Outo kept going), Outo $version\n${Log.getStackTraceString(e).trimEnd()}") }
     }
 
     /** How the earlier Outos ended, since the last ones written down. */

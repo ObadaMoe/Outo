@@ -63,6 +63,8 @@ class EngineSynth {
 
     val isPlaying get() = running
 
+    /** From the car's readings (a background thread) and Sound Studio (the main one): one at a time. */
+    @Synchronized
     fun start() {
         if (running) return
         // Asked again with each reading of the car (ten a second): after a refusal, wait
@@ -111,6 +113,7 @@ class EngineSynth {
         }
     }
 
+    @Synchronized
     fun stop() {
         running = false
         thread?.join(500)
@@ -342,8 +345,9 @@ class EngineSynth {
 
     private fun drive(dt: Float, p: Float, idle: Float, red: Float) {
         val s = spec
-        val ratios = gearRatios(s.gears)
-        if (gear < 1) gear = 1
+        val ratios = gearRatios(max(1, s.gears))
+        // The engine can change under it (another car picked in Sound Studio).
+        gear = gear.coerceIn(1, ratios.size)
         val final = 3.7f
         val wheel = 0.33f
         val power = s.horsepower * 745.7f
@@ -358,13 +362,14 @@ class EngineSynth {
         val drag = 0.42f * speedMs * speedMs + 180f + (if (p < 0.05f) 900f else 0f)
         speedMs = max(0f, speedMs + (force - drag) / mass * dt)
         // Shifts.
-        if (engineRpm > red * 0.97f && gear < s.gears) gear++
+        if (engineRpm > red * 0.97f && gear < ratios.size) gear++
         else if (gear > 1 && engineRpm < idle * 1.8f) gear--
         rpm = approach(rpm, engineRpm.coerceIn(idle, red), (red - idle) * 3f * dt)
     }
 
     private fun gearRatios(n: Int): FloatArray {
         val first = 3.6f; val last = 0.72f
+        if (n <= 1) return floatArrayOf(first)
         return FloatArray(n) { i -> first * (last / first).pow(i / (n - 1f)) }
     }
 

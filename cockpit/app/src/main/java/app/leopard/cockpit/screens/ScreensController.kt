@@ -2,6 +2,7 @@ package app.leopard.cockpit.screens
 
 import android.os.SystemClock
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.car.CarSnapshot
 import app.leopard.cockpit.car.DisplayRow
@@ -39,7 +40,7 @@ class ScreensController(
     val bridge: CarBridge,
     val hosts: HostManager,
 ) {
-    private val ui = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val ui = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashLog.survive)
 
     /** The apps chosen to open when Otility starts (read once: this is the start). */
     private val startup = prefs.startup.value.takeUnless { it.isEmpty }

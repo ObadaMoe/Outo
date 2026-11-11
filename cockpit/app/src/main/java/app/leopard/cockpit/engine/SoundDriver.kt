@@ -1,5 +1,6 @@
 package app.leopard.cockpit.engine
 
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.data.Prefs
 import app.leopard.cockpit.data.Settings
@@ -25,7 +26,7 @@ class SoundDriver(
     private val feed: VehicleFeed,
     private val bridge: CarBridge,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CrashLog.survive)
 
     /** The Sound Studio is open and playing its own preview. */
     val studioOpen = MutableStateFlow(false)

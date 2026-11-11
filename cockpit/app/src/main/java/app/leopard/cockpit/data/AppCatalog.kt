@@ -15,6 +15,7 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.screens.AppId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +38,7 @@ data class AppInfo(
 /** Every app the car can launch, with icons ready to draw. */
 class AppCatalog(private val context: Context) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CrashLog.survive)
     private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
     val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
 
@@ -66,16 +67,20 @@ class AppCatalog(private val context: Context) {
                 .asSequence()
                 .filter { it.activityInfo.packageName != context.packageName }
                 .distinctBy { it.activityInfo.packageName }
-                .map { ri ->
-                    val ai = ri.activityInfo
-                    val bmp = iconBitmap(ri.loadIcon(pm))
-                    AppInfo(
-                        id = AppId(ai.packageName),
-                        label = ri.loadLabel(pm).toString(),
-                        component = ComponentName(ai.packageName, ai.name),
-                        icon = bmp.asImageBitmap(),
-                        tint = dominant(bmp),
-                    )
+                .mapNotNull { ri ->
+                    // An app being updated or removed right now can lose its icon or name
+                    // halfway: it's left out until the next refresh.
+                    runCatching {
+                        val ai = ri.activityInfo
+                        val bmp = iconBitmap(ri.loadIcon(pm))
+                        AppInfo(
+                            id = AppId(ai.packageName),
+                            label = ri.loadLabel(pm).toString(),
+                            component = ComponentName(ai.packageName, ai.name),
+                            icon = bmp.asImageBitmap(),
+                            tint = dominant(bmp),
+                        )
+                    }.getOrNull()
                 }
                 .sortedBy { it.label.lowercase() }
                 .toList()

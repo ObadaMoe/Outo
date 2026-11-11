@@ -2,6 +2,7 @@ package app.leopard.cockpit.nav
 
 import android.os.SystemClock
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.Prefs
 import app.leopard.cockpit.data.VehicleFeed
@@ -77,7 +78,7 @@ class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, p
 
     private val lane = Executors.newSingleThreadExecutor { r -> Thread(r, "otility-cluster").apply { isDaemon = true } }
         .asCoroutineDispatcher()
-    private val scope = CoroutineScope(SupervisorJob() + lane)
+    private val scope = CoroutineScope(SupervisorJob() + lane + CrashLog.survive)
 
     /** What the cluster has now, as Otility last set it. */
     private val written = HashMap<Int, Int>()
@@ -205,7 +206,7 @@ class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, p
         // Nothing set and nothing to set: the car keeps its own reading.
         if (limit == kmh || (kmh == 0 && limit == null)) return
         val h = helper ?: return
-        val out = runCatching { h.setSpeedLimit(kmh) }.getOrElse { "error: ${it.message}" }
+        val out = runCatching { h.setSpeedLimit(kmh) ?: "error: no answer" }.getOrElse { "error: ${it.message}" }
         if (out.startsWith("error")) {
             if (!limitFailed) Log.w(TAG, "speed limit $kmh: $out")
             limitFailed = true
@@ -219,7 +220,7 @@ class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, p
     private fun writeRoad(text: String) {
         if (road == text) return
         val h = helper ?: return
-        val out = runCatching { h.instrumentSetRoad(text) }.getOrElse { "error: ${it.message}" }
+        val out = runCatching { h.instrumentSetRoad(text) ?: "error: no answer" }.getOrElse { "error: ${it.message}" }
         if (out.startsWith("error")) {
             if (!roadFailed) Log.w(TAG, "street: $out")
             roadFailed = true
@@ -279,7 +280,7 @@ class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, p
     private fun write(feature: Int, value: Int): Boolean {
         if (written[feature] == value) return true
         val h = helper ?: return false
-        val out = runCatching { h.instrumentSet(Instrument.DEVICE, feature, value) }.getOrElse { "error: ${it.message}" }
+        val out = runCatching { h.instrumentSet(Instrument.DEVICE, feature, value) ?: "error: no answer" }.getOrElse { "error: ${it.message}" }
         if (Instrument.wrote(out)) {
             written[feature] = value
             return true

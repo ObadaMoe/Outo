@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.car.HelperLauncher
 import app.leopard.cockpit.data.Prefs
@@ -52,7 +53,7 @@ class Updater(
     private val bridge: CarBridge,
     private val vehicle: VehicleFeed,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.survive)
     private val store = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)

@@ -2,6 +2,7 @@ package app.leopard.cockpit.data
 
 import android.content.Context
 import android.os.SystemClock
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.CarBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,7 @@ data class VehicleData(val raw: Map<String, Int> = emptyMap(), val pedalTop: Int
  * driven per day for the Overview.
  */
 class VehicleFeed(context: Context, private val bridge: CarBridge) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.survive)
     private val sp = context.getSharedPreferences("trips", Context.MODE_PRIVATE)
 
     private val _data = MutableStateFlow(VehicleData())

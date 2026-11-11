@@ -157,8 +157,9 @@ class PhoneLink(private val app: Otility) {
     )
 
     private fun handle(socket: Socket) {
-        socket.use { s ->
-            runCatching {
+        // Closing the socket can fail too (the phone gone): inside, so the worker survives it.
+        runCatching {
+            socket.use { s ->
                 // Each read waits at most 3 s, and the whole request has 8 s, so a
                 // phone that sends a byte now and then can't hold a worker.
                 s.soTimeout = 3000
@@ -166,8 +167,8 @@ class PhoneLink(private val app: Otility) {
                 val from = s.inetAddress?.hostAddress ?: "?"
                 val req = read(BufferedInputStream(s.getInputStream()), deadline, from) ?: return
                 respond(s.getOutputStream(), req)
-            }.onFailure { Log.w(TAG, "phone link request", it) }
-        }
+            }
+        }.onFailure { Log.w(TAG, "phone link request", it) }
     }
 
     private fun read(input: InputStream, deadline: Long, from: String): Request? {

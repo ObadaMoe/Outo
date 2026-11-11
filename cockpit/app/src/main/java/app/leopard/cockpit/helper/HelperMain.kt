@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 12
+    const val VERSION = 13
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -54,13 +54,14 @@ object HelperMain {
         Thread({ deliverLoop(service) }, "otility-deliver").apply { isDaemon = true }.start()
         service.watchPopups()
         SpeedLimits.start()
+        // When the driver presses something, to tell their doing from the car's (see Ignition).
+        Presses.start()
         // Let Otility open itself at start-up next time (apps that may draw over
         // others are allowed to start from the background).
         run(listOf("appops", "set", APP_PACKAGE, "SYSTEM_ALERT_WINDOW", "allow"))
-        if ("--open" in args) {
-            // Always the car's main screen, never one of the displays we host apps in.
-            run(listOf("am", "start", "--display", "0", "-n", "$APP_PACKAGE/.MainActivity", "-f", "0x10000000"))
-        }
+        // Started when the car boots: opens Otility on the car's main screen and keeps it in
+        // front while the car finishes starting.
+        if ("--open" in args) Ignition.reopen("the car started")
         Looper.loop()
     }
 
@@ -70,32 +71,42 @@ object HelperMain {
      */
     private fun deliverLoop(service: HelperService) {
         var deliveredTo = -1
+        /** When Otility was last seen on the main screen. */
+        var inFrontAt = 0L
         while (true) {
-            // While the Otility that has our binder runs, only it is looked at. Reading every
-            // process each time made megabytes of garbage, and the pauses that clear it held
-            // up touches on their way to the apps.
-            val found = if (deliveredTo != -1 && cmdline(deliveredTo) == APP_PACKAGE) deliveredTo to service.appUid else findApp()
-            val pid = found?.first
-            if (deliveredTo != -1 && pid != deliveredTo) {
-                // Otility closed or restarted (a crash, the car's memory manager). Its
-                // views went with it; its displays are kept for the next one (see reset).
-                Log.i(TAG, "Otility pid $deliveredTo went away")
-                service.reset()
-                deliveredTo = -1
-            }
-            if (found != null && pid != deliveredTo) {
-                service.appUid = found.second
-                if (sendBinder(service)) {
-                    deliveredTo = found.first
-                    service.connected()
-                    Log.i(TAG, "binder delivered to pid $pid")
+            // One bad look mustn't end the loop: Otility would lose its binder, and the car its start-up.
+            try {
+                // While the Otility that has our binder runs, only it is looked at. Reading every
+                // process each time made megabytes of garbage, and the pauses that clear it held
+                // up touches on their way to the apps.
+                val found = if (deliveredTo != -1 && cmdline(deliveredTo) == APP_PACKAGE) deliveredTo to service.appUid else findApp()
+                val pid = found?.first
+                if (deliveredTo != -1 && pid != deliveredTo) {
+                    // Otility closed or restarted (a crash, the car's memory manager). Its
+                    // views went with it; its displays are kept for the next one (see reset).
+                    Log.i(TAG, "Otility pid $deliveredTo went away")
+                    service.reset()
+                    // Opened again if it closed by itself while on screen.
+                    Ignition.closed(deliveredTo, SystemClock.uptimeMillis() - inFrontAt < 4_000)
+                    deliveredTo = -1
                 }
-            } else if (pid == null) {
-                deliveredTo = -1
+                if (found != null && pid != deliveredTo) {
+                    service.appUid = found.second
+                    if (sendBinder(service)) {
+                        deliveredTo = found.first
+                        service.connected()
+                        Log.i(TAG, "binder delivered to pid $pid")
+                    }
+                } else if (pid == null) {
+                    deliveredTo = -1
+                }
+                if (deliveredTo != -1 && service.ownTask()?.visible == true) inFrontAt = SystemClock.uptimeMillis()
+                service.tidyKept()
+                // Opens Otility when the car is switched on (BYD force-stops it at switch-off).
+                runCatching { Ignition.tick() }
+            } catch (t: Throwable) {
+                Log.w(TAG, "deliver loop", t)
             }
-            service.tidyKept()
-            // Opens Otility when the car is switched on (BYD force-stops it at switch-off).
-            runCatching { Ignition.tick() }
             SystemClock.sleep(1500)
         }
     }
@@ -339,7 +350,7 @@ internal class HelperService : IOtilityHelper.Stub() {
     }
 
     /** Otility's own window on the main screen. */
-    private fun ownTask() = runCatching {
+    fun ownTask() = runCatching {
         Hidden.tasks().firstOrNull {
             it.pkg == HelperMain.APP_PACKAGE && it.userId == Hidden.MAIN_USER && it.displayId == 0 && it.activityType == 1
         }

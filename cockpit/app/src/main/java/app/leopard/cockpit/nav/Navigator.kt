@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.AppCatalog
 import app.leopard.cockpit.data.Prefs
@@ -46,7 +47,7 @@ class Navigator(
     private val catalog: AppCatalog,
     private val screens: ScreensController,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashLog.survive)
     private val bridge get() = screens.bridge
     private val hosts get() = screens.hosts
 

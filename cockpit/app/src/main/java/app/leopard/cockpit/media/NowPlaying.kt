@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.nav.NavListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +67,7 @@ object NowPlaying {
     val track: StateFlow<Track?> = _track.asStateFlow()
 
     private val main = Handler(Looper.getMainLooper())
-    private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.survive)
     private var context: Context? = null
     private var manager: MediaSessionManager? = null
     private var controllers: List<MediaController> = emptyList()

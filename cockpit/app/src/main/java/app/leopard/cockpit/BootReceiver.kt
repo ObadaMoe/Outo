@@ -26,7 +26,7 @@ class BootReceiver : BroadcastReceiver() {
         val app = context.applicationContext as Otility
         if (!app.prefs.settings.value.startWithCar) return
         val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO + CrashLog.survive).launch {
             try {
                 runCatching { MainActivity.start(context) }
                 // The helper starts on HelperLauncher's own lane. The broadcast (which keeps

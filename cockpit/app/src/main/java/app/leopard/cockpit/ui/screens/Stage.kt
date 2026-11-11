@@ -155,14 +155,17 @@ fun smoothstep(e0: Float, e1: Float, x: Float): Float {
     return t * t * (3f - 2f * t)
 }
 
+private fun Float.px() = if (isFinite()) roundToInt() else 0
+
 /** Places an element at a rectangle given in its parent's pixels. */
 fun Modifier.at(r: Rect): Modifier = at { r }
 
 /** Same, for a rectangle that animates (read during layout only, so no recomposition). */
 fun Modifier.at(r: () -> Rect): Modifier = this.layout { m, _ ->
     val rect = r()
-    val w = rect.width.roundToInt().coerceAtLeast(0)
-    val h = rect.height.roundToInt().coerceAtLeast(0)
+    // A screen with no size yet (0 by 0) can make it NaN for a frame: nothing to draw then.
+    val w = rect.width.px().coerceAtLeast(0)
+    val h = rect.height.px().coerceAtLeast(0)
     val p = m.measure(Constraints.fixed(w, h))
-    layout(w, h) { p.place(IntOffset(rect.left.roundToInt(), rect.top.roundToInt())) }
+    layout(w, h) { p.place(IntOffset(rect.left.px(), rect.top.px())) }
 }

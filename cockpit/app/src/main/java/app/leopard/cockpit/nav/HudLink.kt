@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.SystemClock
 import android.util.Log
+import app.leopard.cockpit.CrashLog
 import app.leopard.cockpit.data.Prefs
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -67,7 +68,7 @@ class HudLink(private val context: Context, private val prefs: Prefs, private va
     /** One thread sends everything, so frames never overlap. */
     private val lane = Executors.newSingleThreadExecutor { r -> Thread(r, "otility-hud").apply { isDaemon = true } }
         .asCoroutineDispatcher()
-    private val scope = CoroutineScope(SupervisorJob() + lane)
+    private val scope = CoroutineScope(SupervisorJob() + lane + CrashLog.survive)
 
     @Volatile private var gateway: IBinder? = null
     @Volatile private var started = false

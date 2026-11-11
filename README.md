@@ -55,6 +55,13 @@ Outo starts the helper itself through the car's network ADB (**Settings › Car 
 
 The helper restarts itself when Outo is updated. If Outo closes, the helper keeps its displays and their apps for 90 seconds, so nothing is lost when Outo comes back.
 
+With **Start with the car** on, the helper also opens Outo when the car is switched on. For the next minute, if BYD's home screen comes up over Outo by itself, Outo goes back in front. If you pressed something just before (BYD's home button, say), the helper leaves it. It never goes over another app, such as the reversing camera. If Outo closes by itself while it's on screen and the car is on (a crash or a freeze), the helper opens it again, up to three times in five minutes. A force stop, an update or the car switching off doesn't count.
+
+After a drive, two logs say what happened:
+
+- `/data/local/tmp/outo-front.log`: what came to the front after the car started, and each time the helper opened Outo, with why.
+- `/sdcard/Android/data/app.leopard.cockpit/files/outo-closed.log`: how Outo closed each time, and any error it caught and kept going after.
+
 ## Requirements
 
 - **The car:** a BYD Leopard 5 on DiLink 5.1 (Android 13), with network ADB on port 5555.
