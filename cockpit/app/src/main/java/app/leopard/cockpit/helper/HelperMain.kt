@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 16
+    const val VERSION = 17
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -551,9 +551,15 @@ internal class HelperService : IOtilityHelper.Stub() {
     /**
      * The app that opened the first window of [taskId] (one of [pkg]'s), as Android
      * keeps it: an app in one of Otility's displays opening a page of the settings, say.
+     *
+     * The whole list, not `-p <pkg>`: with -p Android also asks each of the app's
+     * windows to describe itself, giving each up to 2 s, while it holds the lock every
+     * screen change needs. The app is busy opening just then, so every app opened over
+     * Otility (BYD's bottom bar, say) froze the car for 2 s per window: 4 s for the
+     * seats (12 Nov 2026). The whole list is Android's own record only: about 25 ms.
      */
     private fun openedBy(pkg: String, taskId: Int): String? {
-        val out = exec(listOf("dumpsys", "activity", "-p", pkg, "activities"))
+        val out = exec(listOf("dumpsys", "activity", "activities"))
         var inTask = false
         var opener: String? = null
         for (line in out.lineSequence()) {
