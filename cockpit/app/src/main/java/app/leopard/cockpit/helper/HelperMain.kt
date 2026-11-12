@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 15
+    const val VERSION = 16
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -338,6 +338,10 @@ internal class HelperService : IOtilityHelper.Stub() {
         val before = wasInFront ?: (ownTask()?.visible == true)
         val result = move()
         if (before) {
+            // At once: the home screen comes forward during the move itself, and every
+            // frame it stays up is seen (a flash of BYD's home between the app and Otility).
+            backOnTop()
+            // And a moment later, for one that comes up after.
             SystemClock.sleep(150)
             val now = ownTask()
             if (now != null && !now.visible) {
@@ -347,6 +351,19 @@ internal class HelperService : IOtilityHelper.Stub() {
             }
         }
         return result
+    }
+
+    /** Otility's window put back on top of the main screen if something else is (Android lists each screen's tasks top first). */
+    private fun backOnTop() {
+        val tasks = runCatching { Hidden.tasks() }.getOrNull() ?: return
+        val own = tasks.firstOrNull {
+            it.pkg == HelperMain.APP_PACKAGE && it.userId == Hidden.MAIN_USER && it.displayId == 0 && it.activityType == 1
+        } ?: return
+        val top = tasks.firstOrNull { it.displayId == 0 } ?: return
+        if (top.taskId == own.taskId) return
+        runCatching { Hidden.showTask(own.taskId, 0) }
+            .onSuccess { Log.i(HelperMain.TAG, "${top.pkg} came up over Otility as an app moved; Otility back on top") }
+            .onFailure { Log.w(HelperMain.TAG, "Otility back on top", it) }
     }
 
     /** Otility's own window on the main screen. */
@@ -439,6 +456,20 @@ internal class HelperService : IOtilityHelper.Stub() {
      * the car's own home screen) it stays: that's the driver's.
      */
     fun watchPopups() {
+        // Told the moment Android's tasks change, so a window is back in its display
+        // before it has been on the main screen for more than a frame or two. Without
+        // that, the helper looks every POPUP_LOOK_MS.
+        val change = Object()
+        var changed = false
+        runCatching {
+            Hidden.watchTasks {
+                synchronized(change) {
+                    changed = true
+                    change.notifyAll()
+                }
+            }
+        }.onSuccess { Log.i(HelperMain.TAG, "told of task changes") }
+            .onFailure { Log.w(HelperMain.TAG, "not told of task changes: looking every $POPUP_LOOK_MS ms", it) }
         Thread({
             /** Each task in one of Otility's displays at the last look, and which display. */
             var homes = emptyMap<Int, Int>()
@@ -448,7 +479,12 @@ internal class HelperService : IOtilityHelper.Stub() {
             /** When each task was put back, to give up on one Android keeps sending over. */
             val moved = HashMap<Int, ArrayList<Long>>()
             while (true) {
-                SystemClock.sleep(POPUP_LOOK_MS)
+                synchronized(change) {
+                    if (!changed) change.wait(POPUP_LOOK_MS)
+                    changed = false
+                }
+                // A change comes as a few at once (a window opens, its task moves): look once they're in.
+                SystemClock.sleep(POPUP_SETTLE_MS)
                 if (hosts.isEmpty()) {
                     homes = emptyMap(); known = emptySet(); otilityInFront = false
                     continue
@@ -878,8 +914,10 @@ internal class HelperService : IOtilityHelper.Stub() {
         /** Where an update waits while it's installed (the shell can read it here; Outo's own files it can't). */
         const val UPDATE_FILE = "/data/local/tmp/outo-update.apk"
         const val CAPTURE_MAX = 256
-        /** How often the helper looks for apps' windows landing on the main screen. */
+        /** How often the helper looks for apps' windows landing on the main screen, when Android doesn't say. */
         const val POPUP_LOOK_MS = 300L
+        /** After Android says the tasks changed, a moment for the rest of the change to come in. */
+        const val POPUP_SETTLE_MS = 12L
         /** After Otility starts an app, its own hand-over (a splash screen) isn't a pop-up. */
         const val POPUP_QUIET_MS = 8_000L
         /** At most this many times a task is put back in [POPUP_GIVE_UP_MS]; then it stays. */

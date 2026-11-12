@@ -101,6 +101,35 @@ internal object Hidden {
         return rows
     }
 
+    /**
+     * Has Android call [onChange] (on a binder thread) whenever its tasks change: one
+     * comes to the front, moves to another display, a window opens. What changed isn't
+     * read (the calls differ between versions): the caller looks at the tasks again.
+     * Throws if Android won't tell the shell.
+     */
+    fun watchTasks(onChange: () -> Unit) {
+        val descriptor = "android.app.ITaskStackListener"
+        val binder = object : android.os.Binder() {
+            init {
+                attachInterface(null, descriptor)
+            }
+
+            override fun onTransact(code: Int, data: android.os.Parcel, reply: android.os.Parcel?, flags: Int): Boolean {
+                if (code == INTERFACE_TRANSACTION) {
+                    reply?.writeString(descriptor)
+                    return true
+                }
+                if (code in FIRST_CALL_TRANSACTION..LAST_CALL_TRANSACTION) {
+                    // All of them one-way: nothing to answer.
+                    runCatching { onChange() }
+                    return true
+                }
+                return super.onTransact(code, data, reply, flags)
+            }
+        }
+        call(activityTasks, "registerTaskStackListener", asInterface(descriptor, binder))
+    }
+
     /** The car's main user. Otility and the apps it runs belong to it; the passenger screen runs as another. */
     const val MAIN_USER = 0
 

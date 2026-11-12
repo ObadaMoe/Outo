@@ -408,6 +408,9 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 
 private fun km(v: Int?) = v?.let { "%,d km".format(it) } ?: DASH
 
+/** The battery's range when full, as the owner reads it in their Leopard 5: the electric bar is out of this. */
+private const val ELECTRIC_RANGE_MAX_KM = 210f
+
 @Composable
 private fun EnergyCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
     val t = LocalTokens.current
@@ -437,7 +440,7 @@ private fun EnergyCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
                 }
             }
             Spacer(Modifier.height(14.dp))
-            RangeBar("Electric", v.elecRangeKm, (v.elecRangeKm ?: 0).toFloat() / total, t.acc)
+            RangeBar("Electric", v.elecRangeKm, (v.elecRangeKm ?: 0).toFloat() / ELECTRIC_RANGE_MAX_KM, t.acc)
             Spacer(Modifier.height(8.dp))
             RangeBar("Fuel", v.fuelRangeKm, (v.fuelRangeKm ?: 0).toFloat() / total, Color(0xFFFF9F0A))
         }
@@ -459,7 +462,7 @@ private fun EnergyCard(v: VehicleData, slot: WidgetSlot, modifier: Modifier) {
                     Spacer(Modifier.width(6.dp))
                     Txt("km", T.headline, t.text2, Modifier.padding(bottom = 10.dp))
                 }
-                RangeBar("Electric", v.elecRangeKm, (v.elecRangeKm ?: 0).toFloat() / total, t.acc)
+                RangeBar("Electric", v.elecRangeKm, (v.elecRangeKm ?: 0).toFloat() / ELECTRIC_RANGE_MAX_KM, t.acc)
                 Spacer(Modifier.height(8.dp))
                 RangeBar("Fuel", v.fuelRangeKm, (v.fuelRangeKm ?: 0).toFloat() / total, Color(0xFFFF9F0A))
             }

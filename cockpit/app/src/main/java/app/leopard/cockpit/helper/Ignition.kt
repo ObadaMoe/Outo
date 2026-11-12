@@ -18,8 +18,8 @@ import java.util.Locale
  * `sys.acc_status`, OFF while switched off), and opens Otility on the main screen
  * when it turns ON, once the car's start-up animation is done.
  *
- * BYD's home screen can come up over it a while later, as the car finishes starting.
- * For [GUARD_MS] after opening, Otility goes back in front each time that happens,
+ * BYD's home screen can come up over it a few seconds later, as the car finishes starting.
+ * For [GUARD_MS] after opening, Otility goes back in front when that happens,
  * unless the driver had just pressed something ([Presses]): then it was theirs, and
  * the helper leaves it. It never goes over another app (the reversing camera, say).
  *
@@ -35,12 +35,21 @@ internal object Ignition {
     private const val ACC = "sys.acc_status"
     /** The animation the car plays while it wakes; 0 when it's done. */
     private const val ANIMATION = "sys.accanim.status"
-    /** After opening, how long BYD's home screen coming up over Otility brings it back. */
-    private const val GUARD_MS = 60_000L
-    /** At most this many times in that minute; once when the driver's presses can't be read. */
-    private const val GUARD_MAX = 4
-    /** A press this recent means the driver did it (BYD's home button, say). */
-    private const val DRIVER_MS = 2_500L
+    /**
+     * After opening, how long BYD's home screen coming up over Otility brings it back.
+     * BYD's own came 3 to 8 s after Outo opened in every start logged (11–12 Nov 2026).
+     * Longer, and it caught the driver: BYD's bottom bar opens the car's controls in its
+     * home app, so the driver's taps on it were taken back too.
+     */
+    private const val GUARD_MS = 20_000L
+    /** At most this many times; once when the driver's presses can't be read. */
+    private const val GUARD_MAX = 2
+    /**
+     * A press this recent means the driver did it (BYD's home button, or the car's
+     * controls on its bottom bar). Generous: just after the car wakes, BYD's home app can
+     * take a few seconds to come up after the tap, and the helper looks every second or two.
+     */
+    private const val DRIVER_MS = 6_000L
     /** At most this long waiting for the animation. */
     private const val ANIMATION_MAX = 12_000L
     /** ACTIVITY_TYPE_HOME: BYD's launcher. */
@@ -123,7 +132,8 @@ internal object Ignition {
             }
             else -> {
                 returns++
-                open("BYD's home screen came up over it")
+                val press = if (Presses.last == 0L) "no press yet" else "last press ${(now - Presses.last) / 100 / 10.0} s before"
+                open("BYD's home screen came up over it ($press)")
             }
         }
     }
