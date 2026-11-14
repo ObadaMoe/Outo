@@ -5,7 +5,12 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateFloat
+import app.leopard.cockpit.ui.carplay.Motion
+import app.leopard.cockpit.ui.carplay.Origin
+import app.leopard.cockpit.ui.carplay.tabMotion
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.core.Animatable
@@ -61,6 +66,10 @@ import app.leopard.cockpit.ui.screens.ClusterPeek
 import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.Appearance
 import app.leopard.cockpit.data.Tab
+import app.leopard.cockpit.data.UiMode
+import app.leopard.cockpit.ui.carplay.AppSwitcherHost
+import app.leopard.cockpit.ui.carplay.CarPlayApps
+import app.leopard.cockpit.ui.carplay.CarPlayHome
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.ui.apps.AppsTab
@@ -102,6 +111,8 @@ class Nav(start: Tab) {
     var dockLift: LiftCallbacksFactory? = null
     /** What tapping the open tab's button on the sidebar again does (zoom out of a screen, say). */
     var reselect: (() -> Unit)? = null
+    /** What tapping Home on Home does when nothing above has claimed it (CarPlay's Home: back to its dashboard). */
+    var home: (() -> Unit)? = null
     /** A Back button at the top of the sidebar, for a page opened up over its tab (the large map). */
     var back by mutableStateOf<(() -> Unit)?>(null)
     /**
@@ -124,9 +135,35 @@ class Nav(start: Tab) {
      * from the dashboard.
      */
     var launchFrom: Offset? = null
+    /**
+     * CarPlay mode: what an app opening grows out of (the icon tapped, or its card in the
+     * app switcher), taken by its window when it shows (see CarPlayApps).
+     */
+    internal val launchOrigins = HashMap<AppId, Origin>()
+    /** Each sidebar app's icon, in the window's pixels: CarPlay mode's windows shrink back into it. */
+    val sidebarIcons = HashMap<AppId, Rect>()
+    /**
+     * CarPlay's dashboard map, in the window's pixels, while Home is on the dashboard (empty
+     * otherwise): the map app's window shrinks back into it.
+     */
+    var dashboardMap = Rect.Zero
+    /**
+     * The Screens tab as all three screens, in CarPlay mode (which otherwise shows the main
+     * screen's apps beside the sidebar there): opened from Settings, or for another screen.
+     */
+    var allScreens by mutableStateOf(false)
+    /** The page CarPlay's Home was on, for when it opens again (Home tapped there goes to the first). */
+    var homePage = 0
     fun openScreens(zoom: ScreenId? = null) {
         tab = Tab.SCREENS
         zoomRequest = zoom
+        allScreens = zoom != null && zoom != ScreenId.MAIN
+    }
+    /** All three screens, on the car photo, in either mode. */
+    fun openAllScreens() {
+        tab = Tab.SCREENS
+        zoomRequest = null
+        allScreens = true
     }
 }
 
@@ -148,17 +185,32 @@ fun OtilityApp(app: Otility) {
     }
     val nav = remember { Nav(settings.startTab) }
     // A startup app on the main screen: open on it, zoomed in (once, when Otility starts).
+    // In CarPlay mode, beside the sidebar.
     LaunchedEffect(Unit) {
         val zoom = app.screens.takeStartupZoom()
-        if (zoom != null && nav.tab == Tab.SCREENS) nav.zoomRequest = zoom
+        if (zoom != null && app.prefs.settings.value.mode == UiMode.CARPLAY) nav.openScreens(zoom)
+        else if (zoom != null && nav.tab == Tab.SCREENS) nav.zoomRequest = zoom
     }
+    // CarPlay mode's Home is black in light mode too.
+    val carPlay = settings.mode == UiMode.CARPLAY
+    // CarPlay mode: the main screen's apps, beside the sidebar (the Screens tab, unless
+    // it's opened as all three screens). Leaving them (Home, Back, another tab) sends them
+    // to the background, to the app switcher.
+    val appsShown = carPlay && nav.tab == Tab.SCREENS && !nav.allScreens
+    var appsWereShown by remember { mutableStateOf(appsShown) }
+    LaunchedEffect(appsShown) {
+        if (appsWereShown && !appsShown && carPlay) app.screens.sendMainToBack()
+        appsWereShown = appsShown
+    }
+    LaunchedEffect(nav.tab) { if (nav.tab != Tab.SCREENS) nav.allScreens = false }
+    val blackHome = carPlay && nav.tab == Tab.OVERVIEW
     // Dark status bar icons and home bar in light mode, so they show on the white fog.
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
         androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
+            isAppearanceLightStatusBars = !dark && !blackHome
+            isAppearanceLightNavigationBars = !dark && !blackHome
         }
     }
     // A place from the phone opened the map on the main screen: show it.
@@ -175,9 +227,10 @@ fun OtilityApp(app: Otility) {
     // bar, the fog, the sliders and the floating window are all drawn for it.
     OtilityTheme(t) { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(Modifier.fillMaxSize().background(t.background)) {
-            // Back leaves a tab for Screens. Set up before the tabs, so Back inside a
-            // tab (leaving widget editing, the expanded map) goes first.
-            BackHandler(enabled = nav.tab != Tab.SCREENS) { nav.tab = Tab.SCREENS }
+            // Back leaves a tab for Home, and stops there: nothing is behind Home. Set up
+            // before the tabs, so Back inside a tab (leaving widget editing, the expanded
+            // map) goes first.
+            BackHandler(enabled = nav.tab != Tab.SCREENS) { if (nav.tab != Tab.OVERVIEW) nav.tab = Tab.OVERVIEW }
             val density = LocalDensity.current
             // The car's bars, for sizing the main screen's apps before the Screens tab is seen.
             val barTop = WindowInsets.systemBars.getTop(density)
@@ -196,11 +249,24 @@ fun OtilityApp(app: Otility) {
             }
             CompositionLocalProvider(LocalNav provides nav, LocalWindowPx provides windowPx, androidx.compose.foundation.LocalIndication provides PressIndication) {
                 Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-                    Crossfade(nav.tab, animationSpec = tween(220), label = "tab") { tab ->
-                        // The Screens tab's car photo fills the screen, and it keeps its apps
-                        // and buttons between the car's bars itself. The other tabs live
-                        // between the bars, whole.
-                        if (tab == Tab.SCREENS) ScreensTab()
+                    AnimatedContent(
+                        nav.tab to appsShown,
+                        transitionSpec = { tabMotion(carPlay) },
+                        label = "tab",
+                    ) { (tab, apps) ->
+                        // The Screens tab's car photo, CarPlay's black Home and its apps fill the
+                        // screen, and keep their apps and buttons between the car's bars themselves.
+                        // The other tabs live between the bars, whole.
+                        if (tab == Tab.SCREENS && apps) {
+                            // On the way out the windows shrink back into their icons; this page
+                            // stays until they're there.
+                            val presence by transition.animateFloat({ Motion.shrink() }, label = "apps") {
+                                if (it == EnterExitState.PostExit) 0f else 1f
+                            }
+                            CarPlayApps(presence = { presence }, leaving = transition.targetState == EnterExitState.PostExit)
+                        }
+                        else if (tab == Tab.SCREENS) ScreensTab()
+                        else if (tab == Tab.OVERVIEW && carPlay) CarPlayHome()
                         else Box(Modifier.fillMaxSize().windowInsetsPadding(CarBars)) {
                             when (tab) {
                                 Tab.OVERVIEW -> OverviewTab()
@@ -252,6 +318,8 @@ fun OtilityApp(app: Otility) {
                         )
                         // A closed app, for a moment: Undo opens it again.
                         UndoCloseNote(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).windowInsetsPadding(WindowInsets.safeDrawing))
+                        // CarPlay mode: three fingers up, the apps and splits used lately.
+                        AppSwitcherHost()
                         // Menus are placed in the window's pixels; this layer starts below the car's status bar.
                         val menu = nav.menu
                         ContextMenu(remember(menu, barTop) { menu?.let { it.copy(anchor = it.anchor.translate(0f, -barTop.toFloat())) } }) {

@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -96,6 +97,8 @@ fun MapWidget(
     onRemove: () -> Unit,
     // How far opened up, 0 to 1; the Overview fades its widgets out by it.
     progress: Animatable<Float, AnimationVector1D> = remember { Animatable(0f) },
+    // Opened up, what it leaves down the left of [full] (the sidebar's room).
+    rail: Dp = SideInset,
 ) {
     val otility = Otility.instance
     val nav = LocalNav.current
@@ -171,9 +174,9 @@ fun MapWidget(
     // Opened up, the map leaves the tab bar its rail down the left, with Back above
     // it, as CarPlay does, so nothing of Otility's covers the map app's banners and buttons.
     // [full] is the Overview's area, already between the car's bars.
-    val rail = with(density) { SideInset.toPx() }
+    val railPx = with(density) { rail.toPx() }
     val inset = with(density) { 8.dp.toPx() }
-    val open = Rect(full.left + rail, full.top + inset, full.right - inset, full.bottom - inset)
+    val open = Rect(full.left + railPx, full.top + inset, full.right - inset, full.bottom - inset)
     val rect = lerp(pane, open, p.value)
     // The app's real size: the pane's, or the opened-up map's.
     val target = if (expanded) open else pane

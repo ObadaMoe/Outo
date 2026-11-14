@@ -58,12 +58,16 @@ object Instrument {
 
     /**
      * A write went through. The car's autoservice answers a write with one word, its
-     * result ("Result: Parcel(00000001 '....')"); a failed call starts with a non-zero
-     * status followed by its message.
+     * result ("Result: Parcel(00000001 '....')"), which is negative when the car refused
+     * the value: -10011 (ffffd8e5) is BYD's "unavailable", as for a value only the car's
+     * own computers set (12 Nov 2026). A failed call starts with a non-zero status
+     * followed by its message.
      */
     fun wrote(out: String): Boolean {
         val m = REPLY.find(out) ?: return false
-        return m.groupValues[2].isEmpty() || m.groupValues[1].toLong(16) == 0L
+        val first = m.groupValues[1].toLong(16).toInt()
+        if (m.groupValues[2].isEmpty()) return first >= 0
+        return first == 0 && m.groupValues[2].toLong(16).toInt() >= 0
     }
 
     private val REPLY = Regex("""Parcel\(\s*([0-9a-fA-F]{8})(?:\s+([0-9a-fA-F]{8}))?""")

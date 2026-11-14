@@ -1,6 +1,10 @@
 package app.leopard.cockpit.ui.apps
 
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.leopard.cockpit.Otility
@@ -44,6 +49,7 @@ import app.leopard.cockpit.ui.SideInset
 import app.leopard.cockpit.ui.AppIcon
 import app.leopard.cockpit.ui.Icons
 import app.leopard.cockpit.ui.LocalNav
+import app.leopard.cockpit.ui.Nav
 import app.leopard.cockpit.ui.openZoomed
 import app.leopard.cockpit.ui.pinAt
 import app.leopard.cockpit.ui.MenuEntry
@@ -61,94 +67,101 @@ import app.leopard.cockpit.ui.screens.liftable
 import app.leopard.cockpit.ui.theme.LocalTokens
 import app.leopard.cockpit.ui.theme.T
 
+/** Opens [a] there, and zooms in on that screen. */
+private fun Nav.openOn(a: AppInfo, target: DropTarget) {
+    Otility.instance.screens.place(a.id, target)
+    openScreens(target.screen)
+}
+
+/** An app's menu, held on All apps or on CarPlay's Home: where it opens, how it shows, the sidebar. */
+internal fun appMenu(nav: Nav, a: AppInfo): List<MenuEntry> {
+    val app = Otility.instance
+    val dock = app.prefs.dock.value
+    val view = app.prefs.appViews.value[a.id] ?: AppView.TABLET
+    val inDock = a.id in dock
+    return listOf(
+        MenuHeader(a.label),
+        MenuTiles(listOf(
+            MenuItem("Full", Icons.full) { nav.openOn(a, DropTarget(ScreenId.MAIN, Slot.FULL)) },
+            MenuItem("Left Half", Icons.leftHalf) { nav.openOn(a, DropTarget(ScreenId.MAIN, Slot.LEFT)) },
+            MenuItem("Right Half", Icons.rightHalf) { nav.openOn(a, DropTarget(ScreenId.MAIN, Slot.RIGHT)) },
+        )),
+        MenuGap,
+        MenuHeader("Other Displays"),
+        MenuItem("Passenger", Icons.passenger) { nav.openOn(a, DropTarget(ScreenId.PASSENGER, Slot.FULL)) },
+        MenuItem("Picture in Picture", Icons.pip) { app.screens.pictureInPicture(a.id) },
+        MenuGap,
+        MenuHeader("Shows as"),
+        MenuTiles(listOf(
+            MenuItem("Tablet", Icons.tablet, checked = view == AppView.TABLET) { app.prefs.setAppView(a.id, AppView.TABLET) },
+            MenuItem("Phone", Icons.phone, checked = view == AppView.PHONE) { app.prefs.setAppView(a.id, AppView.PHONE) },
+        )),
+        MenuGap,
+        if (inDock) MenuItem("Remove from Sidebar", Icons.minus, destructive = true) { app.prefs.setDock(dock - a.id) }
+        // Mostly pinned by dragging it onto the sidebar; this is for when that's awkward.
+        else MenuItem("Add to Sidebar", Icons.plus, enabled = dock.size < DOCK_MAX) { app.prefs.setDock(dock + a.id) },
+    )
+}
+
+/**
+ * One app: its icon (tap to open it full screen on the main screen, hold for the
+ * menu, hold and drag onto the sidebar to pin it), its name, and a dot while it's
+ * on a screen.
+ */
+@Composable
+internal fun AppTile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier, label: TextStyle = T.footnote) {
+    val nav = LocalNav.current
+    val t = LocalTokens.current
+    val state by Otility.instance.screens.state.collectAsState()
+    val on = state.screenOf(a.id)
+    // Where the icon is: the app grows out of it.
+    var iconAt by remember { mutableStateOf(Rect.Zero) }
+    val open = { nav.openZoomed(a.id, if (iconAt.width > 0f) iconAt.center else Offset.Unspecified, iconAt) }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        AppIcon(
+            a, icon,
+            Modifier.onGloballyPositioned { iconAt = it.boundsInRoot() }.liftable(a.id, LiftCallbacks(
+                onTap = open,
+                onHold = { bounds -> nav.menu = MenuRequest(bounds, appMenu(nav, a), a) },
+                onDragStart = { p ->
+                    nav.menu = null
+                    nav.dragging = a.id
+                    nav.dragAt = p
+                },
+                onDrag = { p -> nav.dragAt = p },
+                onDrop = { p ->
+                    nav.pinAt(a.id, p)
+                    nav.dragging = null
+                },
+                onCancel = { nav.dragging = null },
+            )),
+        )
+        Spacer(Modifier.height(8.dp))
+        Txt(
+            a.label, label.copy(textAlign = TextAlign.Center), maxLines = 1,
+            modifier = Modifier.padding(horizontal = 6.dp).noRipple(open),
+        )
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.size(5.dp).background(if (on != null) t.text2 else Color.Transparent, CircleShape))
+    }
+}
+
 /** Every app in the car. Tap to open on the main screen; hold for more. */
 @Composable
 fun AppsTab() {
     val app = Otility.instance
     val t = LocalTokens.current
-    val nav = LocalNav.current
     val all by app.catalog.apps.collectAsState()
-    val dock by app.prefs.dock.collectAsState()
-    val views by app.prefs.appViews.collectAsState()
-    val state by app.screens.state.collectAsState()
     var query by remember { mutableStateOf("") }
-    // Drawn by OtilityApp, above the sidebar.
-    var menu: MenuRequest? by nav::menu
     val shown = all.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }
-
-    /** Opens it there, and zooms in on that screen. */
-    fun openOn(a: AppInfo, target: DropTarget) {
-        app.screens.place(a.id, target)
-        nav.openScreens(target.screen)
-    }
-
-    /** A tap: full screen on the main screen, zoomed in (or a question if it's already open somewhere). */
-    fun tapOpen(a: AppInfo) = nav.openZoomed(a.id)
-
-    fun menuFor(a: AppInfo): List<MenuEntry> {
-        val view = views[a.id] ?: AppView.TABLET
-        val inDock = a.id in dock
-        return listOf(
-            MenuHeader(a.label),
-            MenuTiles(listOf(
-                MenuItem("Full", Icons.full) { openOn(a, DropTarget(ScreenId.MAIN, Slot.FULL)) },
-                MenuItem("Left Half", Icons.leftHalf) { openOn(a, DropTarget(ScreenId.MAIN, Slot.LEFT)) },
-                MenuItem("Right Half", Icons.rightHalf) { openOn(a, DropTarget(ScreenId.MAIN, Slot.RIGHT)) },
-            )),
-            MenuGap,
-            MenuHeader("Other Displays"),
-            MenuItem("Passenger", Icons.passenger) { openOn(a, DropTarget(ScreenId.PASSENGER, Slot.FULL)) },
-            MenuItem("Picture in Picture", Icons.pip) { app.screens.pictureInPicture(a.id) },
-            MenuGap,
-            MenuHeader("Shows as"),
-            MenuTiles(listOf(
-                MenuItem("Tablet", Icons.tablet, checked = view == AppView.TABLET) { app.prefs.setAppView(a.id, AppView.TABLET) },
-                MenuItem("Phone", Icons.phone, checked = view == AppView.PHONE) { app.prefs.setAppView(a.id, AppView.PHONE) },
-            )),
-            MenuGap,
-            if (inDock) MenuItem("Remove from Sidebar", Icons.minus, destructive = true) { app.prefs.setDock(dock - a.id) }
-            // Mostly pinned by dragging it onto the sidebar; this is for when that's awkward.
-            else MenuItem("Add to Sidebar", Icons.plus, enabled = dock.size < DOCK_MAX) { app.prefs.setDock(dock + a.id) },
-        )
-    }
 
     val recentIds by app.prefs.recents.collectAsState()
     val searching = query.isNotBlank()
     val byId = remember(all) { all.associateBy { it.id } }
     val recent = if (searching) emptyList() else recentIds.mapNotNull { byId[it] }
 
-    /** One app: its icon (tap to open, hold for the menu, hold and drag onto the sidebar to pin it), its name, and a dot while it's on a screen. */
     @Composable
-    fun Tile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier) {
-        val on = state.screenOf(a.id)
-        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-            AppIcon(
-                a, icon,
-                Modifier.liftable(a.id, LiftCallbacks(
-                    onTap = { tapOpen(a) },
-                    onHold = { bounds -> menu = MenuRequest(bounds, menuFor(a), a) },
-                    onDragStart = { p ->
-                        menu = null
-                        nav.dragging = a.id
-                        nav.dragAt = p
-                    },
-                    onDrag = { p -> nav.dragAt = p },
-                    onDrop = { p ->
-                        nav.pinAt(a.id, p)
-                        nav.dragging = null
-                    },
-                    onCancel = { nav.dragging = null },
-                )),
-            )
-            Spacer(Modifier.height(8.dp))
-            Txt(
-                a.label, T.footnote.copy(textAlign = TextAlign.Center), maxLines = 1,
-                modifier = Modifier.padding(horizontal = 6.dp).noRipple { tapOpen(a) },
-            )
-            Spacer(Modifier.height(4.dp))
-            Box(Modifier.size(5.dp).background(if (on != null) t.text2 else Color.Transparent, CircleShape))
-        }
-    }
+    fun Tile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier) = AppTile(a, icon, modifier)
 
     CabinBackground {
         Column(

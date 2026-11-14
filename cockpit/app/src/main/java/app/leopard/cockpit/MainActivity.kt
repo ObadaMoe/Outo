@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.Display
+import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -15,7 +16,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import app.leopard.cockpit.car.HelperLauncher
+import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.ui.OtilityApp
+import app.leopard.cockpit.ui.carplay.AppSwitcher
+import app.leopard.cockpit.ui.carplay.ThreeFingersUp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -38,6 +42,20 @@ class MainActivity : ComponentActivity() {
         val app = application as Otility
         app.startServices()
         setContent { OtilityApp(app) }
+    }
+
+    /** CarPlay mode: three fingers up anywhere open the app switcher. */
+    private val threeUp by lazy {
+        ThreeFingersUp(
+            resources.displayMetrics.density,
+            enabled = { (application as Otility).prefs.settings.value.let { it.mode == UiMode.CARPLAY && it.gestures } },
+            onSwipe = AppSwitcher::show,
+        )
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (threeUp.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onStart() {

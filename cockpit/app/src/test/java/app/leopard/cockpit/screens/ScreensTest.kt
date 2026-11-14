@@ -180,4 +180,22 @@ class ScreensTest {
             assertEquals((st.running - c.state.running).toSet(), c.closes.map { it.first }.toSet())
         }
     }
+
+    @Test fun spacesKeepEachAppOnce() {
+        var spaces = Screens.noteSpace(emptyList(), Single(yt), 12)
+        spaces = Screens.noteSpace(spaces, Split(yt, music), 12)
+        // YouTube went into a split: one card, the split.
+        assertEquals(listOf(Split(yt, music)), spaces)
+        spaces = Screens.noteSpace(spaces, Single(maps), 12)
+        assertEquals(listOf(Single(maps), Split(yt, music)), spaces)
+        // Music on its own now: the split it was in keeps YouTube.
+        spaces = Screens.noteSpace(spaces, Single(music), 12)
+        assertEquals(listOf(Single(music), Single(maps), Single(yt)), spaces)
+        // The same split resized: still one card, first.
+        spaces = Screens.noteSpace(spaces, Split(maps, yt, 0.4f), 12)
+        spaces = Screens.noteSpace(spaces, Split(maps, yt, 0.6f), 12)
+        assertEquals(listOf(Split(maps, yt, 0.6f), Single(music)), spaces)
+        assertEquals(spaces, Screens.noteSpace(spaces, Idle, 12))
+        assertEquals(1, Screens.noteSpace(spaces, Single(chrome), 1).size)
+    }
 }

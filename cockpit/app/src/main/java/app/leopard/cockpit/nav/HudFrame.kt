@@ -10,6 +10,8 @@ import java.io.ByteArrayOutputStream
 object HudFrame {
     const val GUIDING = 2
     const val STOPPED = 1
+    /** Field 6 with a lane picture. */
+    private const val LANES_SHOWN = 6
 
     data class Fields(
         /** 3: metres left on the route. */
@@ -30,6 +32,11 @@ object HudFrame {
         val code: Int = 0,
         /** 11: the road's speed limit in km/h, as BYD's own map sends it. */
         val speedLimit: Int = 0,
+        /**
+         * 7: the lane picture, a PNG (Outo puts Waze's limit sign there). With it,
+         * field 6 says lanes are shown (6, as others found).
+         */
+        val lanePicture: ByteArray? = null,
         /** 19 and 20: where the car is, in degrees (see [HudRoute]). */
         val longitude: Double = 0.0,
         val latitude: Double = 0.0,
@@ -50,6 +57,10 @@ object HudFrame {
         val inner = Writer().apply {
             uint(3, f.remainingMetres)
             uint(4, f.remainingSeconds)
+            if (f.lanePicture != null && f.lanePicture.isNotEmpty()) {
+                uint(6, LANES_SHOWN)
+                bytes(7, f.lanePicture)
+            }
             bytes(8, f.icon)
             uint(9, f.metres)
             string(10, f.road?.let(::cap))

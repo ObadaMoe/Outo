@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 17
+    const val VERSION = 20
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -242,7 +242,7 @@ internal class HelperService : IOtilityHelper.Stub() {
         }
         if (navSent) {
             navSent = false
-            runCatching { Vehicle.setRoad("") }
+            runCatching { Vehicle.setRoad(" ") } // The car refuses an empty street.
             for ((feature, value) in Instrument.CLEAR) {
                 exec(listOf("service", "call", "autoservice", "6", "i32", "${Instrument.DEVICE}", "i32", "$feature", "i32", "$value"))
             }
@@ -862,7 +862,7 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     override fun instrumentSetRoad(road: String): String {
         check()
-        if (road.isNotEmpty()) navSent = true
+        if (road.isNotBlank()) navSent = true
         return runCatching { Vehicle.setRoad(road.take(Instrument.ROAD_MAX)) }
             .getOrElse { "error: ${it.javaClass.simpleName}: ${it.message}" }
     }

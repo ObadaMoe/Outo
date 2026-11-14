@@ -58,6 +58,7 @@ import app.leopard.cockpit.data.Appearance
 import app.leopard.cockpit.data.Settings
 import app.leopard.cockpit.data.SoundMode
 import app.leopard.cockpit.data.Tab
+import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.engine.Garage
 import app.leopard.cockpit.ui.SideInset
 import app.leopard.cockpit.ui.SidebarCorner
@@ -100,7 +101,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class SettingsPage(val title: String, val icon: ImageVector, val color: Color, val about: String) {
-    DISPLAY("Display", Icons.display, Color(0xFF0A84FF), "Light or dark, the accent colour, the glass and the emblem on idle screens."),
+    DISPLAY("Display", Icons.display, Color(0xFF0A84FF), "Screen or CarPlay mode, light or dark, the accent colour, the glass and the emblem."),
     SCREENS("Screens & Sidebar", Icons.screens, Color(0xFF5E5CE6), "The car's screens, the gestures when zoomed in, and the sidebar."),
     CLUSTER("Driver Cluster", Icons.gauge, Color(0xFFFF9F0A), "What the driver cluster shows, and how Outo sends it there."),
     NAVIGATION("Navigation", Icons.navigation, Color(0xFF30D158), "Your map app, places from your phone, directions on the cluster and the HUD."),
@@ -321,6 +322,18 @@ private fun Toggle(title: String, value: Boolean, subtitle: String? = null, enab
 private fun DisplayPage() {
     val s = settings()
     val t = LocalTokens.current
+    Group(
+        header = "Mode",
+        footer = if (s.mode == UiMode.CARPLAY) "Like CarPlay: Home has your apps on pages over the emblem, Settings among them. The sidebar keeps Home and your apps."
+        else "Home is the Overview, with its widgets and the map. Settings and Home stay on the sidebar.",
+    ) {
+        Box(Modifier.padding(16.dp)) {
+            Segmented(
+                listOf(UiMode.SCREEN to "Screen", UiMode.CARPLAY to "CarPlay"),
+                s.mode, { m -> update { it.copy(mode = m) } }, Modifier.fillMaxWidth(),
+            )
+        }
+    }
     Group(header = "Appearance") {
         Box(Modifier.padding(16.dp)) {
             Segmented(
@@ -402,9 +415,14 @@ private fun ScreensPage() {
             SettingRow(g, subtitle = what)
         }
     }
-    Group(header = "Sidebar and layouts") {
-        // Pinned from Apps, as on CarPlay there's no list to edit here.
-        SettingRow("Sidebar apps", subtitle = "In Apps, hold an app and drag it onto the sidebar. Hold one on the sidebar to remove it.")
+    Group(
+        header = "Sidebar and layouts",
+        footer = "Hold an app and drag it onto the sidebar to keep it there. Hold one on the sidebar to remove it.",
+    ) {
+        // Neither has a button on the sidebar: they open from here.
+        ActionRow("All apps") { nav.tab = Tab.APPS }
+        Separator()
+        ActionRow("All three screens") { nav.openAllScreens() }
         layouts.forEach { l ->
             Separator()
             SettingRow(l.name, subtitle = "Saved layout") {
@@ -707,7 +725,7 @@ private fun StartupPage() {
         Separator()
         SettingRow("Open on") {
             Segmented(
-                listOf(Tab.OVERVIEW to "Overview", Tab.SCREENS to "Screens", Tab.APPS to "Apps", Tab.SETTINGS to "Settings"),
+                listOf(Tab.OVERVIEW to "Home", Tab.SCREENS to "All three screens"),
                 s.startTab, { v -> update { it.copy(startTab = v) } }, Modifier.width(380.dp),
             )
         }

@@ -220,7 +220,8 @@ class ClusterTurns(private val prefs: Prefs, private val vehicle: VehicleFeed, p
     private fun writeRoad(text: String) {
         if (road == text) return
         val h = helper ?: return
-        val out = runCatching { h.instrumentSetRoad(text) ?: "error: no answer" }.getOrElse { "error: ${it.message}" }
+        // The car refuses an empty street: a space clears it.
+        val out = runCatching { h.instrumentSetRoad(text.ifEmpty { " " }) ?: "error: no answer" }.getOrElse { "error: ${it.message}" }
         if (out.startsWith("error")) {
             if (!roadFailed) Log.w(TAG, "street: $out")
             roadFailed = true

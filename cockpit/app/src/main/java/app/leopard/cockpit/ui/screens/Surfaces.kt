@@ -61,10 +61,24 @@ import kotlin.math.max
 fun HostSurface(
     app: AppId, component: String, width: Int, height: Int, modifier: Modifier = Modifier,
     direct: Boolean = false,
+    picture: HostPicture? = null,
 ) {
     // A view per app: its listener belongs to one app. Without this, the floating
     // window (or the map widget) changing app would keep showing the old one.
-    key(app) { HostView(app, component, width, height, modifier, direct) }
+    key(app) { HostView(app, component, width, height, modifier, direct, picture) }
+}
+
+/**
+ * What a hosted app's view has seen of it: [drewAt], the size it has drawn at since it
+ * was last resized (its first picture a moment after, or at once if the display had that
+ * size already), so a window can keep a half-done layout out of sight.
+ */
+class HostPicture {
+    var drewAt by mutableStateOf(androidx.compose.ui.unit.IntSize.Zero)
+        internal set
+
+    /** It has drawn at [w] × [h] (as the view sizes the app: even, at least 2). */
+    fun drew(w: Int, h: Int) = drewAt == androidx.compose.ui.unit.IntSize(w.coerceAtLeast(2) and 1.inv(), h.coerceAtLeast(2) and 1.inv())
 }
 
 /**
@@ -72,12 +86,13 @@ fun HostSurface(
  * while no glass blurs it: zoomed in on it, say, or on the still dashboard.
  */
 @Composable
-private fun HostView(app: AppId, component: String, width: Int, height: Int, modifier: Modifier, direct: Boolean) {
+private fun HostView(app: AppId, component: String, width: Int, height: Int, modifier: Modifier, direct: Boolean, picture: HostPicture?) {
     val hosts = Otility.instance.screens.hosts
     val w = width.coerceAtLeast(2) and 1.inv()
     val h = height.coerceAtLeast(2) and 1.inv()
     val dpi = hostDpi(app, w, h)
     val feed = remember { HostFeed(app, hosts) }
+    feed.picture = picture
     feed.component = component
     feed.w = w; feed.h = h; feed.dpi = dpi
     // The SurfaceView stays a moment after [direct] ends: until the TextureView, given
@@ -149,6 +164,39 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
     /** Leaving the SurfaceView: the TextureView's next picture. */
     private var fresh: CompletableDeferred<Unit>? = null
 
+    /** Told when the app has drawn at its new size (see [HostPicture]). */
+    var picture: HostPicture? = null
+    private var sizedTo = androidx.compose.ui.unit.IntSize.Zero
+    private var sizedAt = 0L
+    /** The display had that size already: its next picture is right. */
+    private var sizedBefore = false
+    private var framesSinceSized = 0
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    /** The pictures of its new layout have stopped coming (or none came): drawn. */
+    private val settled = Runnable { drawn() }
+
+    private fun drawn() {
+        main.removeCallbacks(settled)
+        val p = picture ?: return
+        if (p.drewAt != sizedTo) p.drewAt = sizedTo
+    }
+
+    /**
+     * A picture since the resize. Laying itself out again the app draws a few in a row:
+     * drawn once they stop for a moment, or a few in and a moment after the resize (one
+     * that draws all the time, a video, never stops).
+     */
+    private fun sizedFrame() {
+        framesSinceSized++
+        val since = android.os.SystemClock.uptimeMillis() - sizedAt
+        if (sizedBefore || (framesSinceSized >= 3 && since >= RESIZED_MS)) {
+            drawn()
+        } else {
+            main.removeCallbacks(settled)
+            main.postDelayed(settled, QUIET_MS)
+        }
+    }
+
     fun textureView(ctx: Context): TextureView = TextureView(ctx).apply {
         isOpaque = false
         texture = this
@@ -198,6 +246,7 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
             override fun onSurfaceTextureUpdated(st: SurfaceTexture) {
                 frames++
                 fresh?.complete(Unit)
+                sizedFrame()
                 if (frames == 1) {
                     shown = true
                     feedDirect()
@@ -226,8 +275,9 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
                 directFed = false
                 texture?.alpha = 1f
                 val s = textureSurface
-                // Not a new display if the app has gone meanwhile (closed, or on another screen).
-                if (s != null) hosts.attach(app, component, s, w, h, dpi, create = false, fit = textureFit)
+                // Not a new display if the app has gone meanwhile (closed, or on another screen),
+                // nor if another view has the app by now.
+                if (s != null) hosts.attach(app, component, s, w, h, dpi, create = false, onlyFrom = holder.surface, fit = textureFit)
                 else hosts.detach(app, holder.surface)
             }
         })
@@ -245,9 +295,13 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
         val sv = direct ?: return
         if (!directAlive || directFed || frames == 0) return
         directFed = true
-        hosts.attach(app, component, sv.holder.surface, w, h, dpi, create = false) { bw, bh ->
+        hosts.attach(app, component, sv.holder.surface, w, h, dpi, create = false, onlyFrom = textureSurface) { bw, bh ->
             sv.post { if (direct === sv) sv.holder.setFixedSize(bw, bh) }
         }.invokeOnCompletion {
+            sv.post {
+                // Another view had the app by then: this one stays on its TextureView.
+                if (directFed && direct === sv && !hosts.drawsInto(app, sv.holder.surface)) directFed = false
+            }
             sv.postDelayed({ if (directFed && direct === sv) texture?.alpha = 0f }, HANDOVER_MS)
         }
     }
@@ -269,7 +323,7 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
         val next = CompletableDeferred<Unit>()
         fresh = next
         try {
-            hosts.attach(app, component, s, w, h, dpi, create = false, fit = textureFit)
+            hosts.attach(app, component, s, w, h, dpi, create = false, onlyFrom = direct?.holder?.surface, fit = textureFit)
             withTimeoutOrNull(LEAVE_MS) { next.await() }
         } finally {
             if (fresh === next) fresh = null
@@ -278,11 +332,30 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
     }
 
     fun resize(w: Int, h: Int, dpi: Int) {
+        val size = androidx.compose.ui.unit.IntSize(w, h)
+        if (size != sizedTo) {
+            sizedTo = size
+            sizedAt = android.os.SystemClock.uptimeMillis()
+            sizedBefore = hosts.sizeOf(app) == size
+            framesSinceSized = 0
+            // No picture at all: nothing changed, or it draws nothing. On with it after a while.
+            main.removeCallbacks(settled)
+            main.postDelayed(settled, NO_PICTURE_MS)
+        }
         texture?.surfaceTexture?.setDefaultBufferSize(w, h)
         direct?.holder?.setFixedSize(w, h)
         hosts.resize(app, w, h, dpi)
     }
 }
+
+/** How long an app takes, at least, to lay itself out again at a new size. */
+private const val RESIZED_MS = 220L
+
+/** A pause this long in an app's pictures after a resize: it has laid itself out. */
+private const val QUIET_MS = 110L
+
+/** No picture this long after a resize: it isn't going to draw one. */
+private const val NO_PICTURE_MS = 450L
 
 /** How long the SurfaceView waits, on leaving it, for the TextureView's first new picture. */
 private const val LEAVE_MS = 300L

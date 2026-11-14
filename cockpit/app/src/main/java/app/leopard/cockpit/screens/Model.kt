@@ -155,6 +155,29 @@ object Screens {
         }
     }
 
+    /**
+     * CarPlay mode's app switcher: [c] came onto the main screen, so it's the first of the
+     * spaces used lately (one app, or two side by side). An app is in one space only, as
+     * on an iPad: it leaves the older ones, and a split it was in keeps its other app.
+     */
+    fun noteSpace(spaces: List<ScreenContent>, c: ScreenContent, max: Int): List<ScreenContent> {
+        if (c == ScreenContent.Idle) return spaces
+        val apps = c.apps.toSet()
+        val older = spaces.mapNotNull { s ->
+            when (s) {
+                ScreenContent.Idle -> null
+                is ScreenContent.Single -> s.takeIf { it.app !in apps }
+                is ScreenContent.Split -> when {
+                    s.left in apps && s.right in apps -> null
+                    s.left in apps -> ScreenContent.Single(s.right)
+                    s.right in apps -> ScreenContent.Single(s.left)
+                    else -> s
+                }
+            }
+        }
+        return (listOf(c) + older).distinctBy { it.apps.toSet() }.take(max)
+    }
+
     private fun swap(c: ScreenContent.Split) = c.copy(left = c.right, right = c.left, ratio = 1f - c.ratio)
 
     private fun without(c: ScreenContent, app: AppId): ScreenContent = when (c) {

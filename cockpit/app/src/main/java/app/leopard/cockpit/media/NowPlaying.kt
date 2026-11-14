@@ -51,7 +51,24 @@ data class Track(
         val p = if (playing) positionMs + ((now - at) * speed).toLong() else positionMs
         return p.coerceIn(0, durationMs ?: Long.MAX_VALUE)
     }
+
+    /** From a video app (YouTube, say): there's a picture to go and see, not only sound. */
+    val video: Boolean get() = pkg in VIDEO_APPS
 }
+
+/** Apps whose media is video. YouTube Music isn't one: it plays songs. */
+internal val VIDEO_APPS = setOf(
+    "com.google.android.youtube",
+    "app.revanced.android.youtube",
+    "com.google.android.apps.youtube.kids",
+    "com.netflix.mediaclient",
+    "com.amazon.avod.thirdpartyclient",
+    "com.disney.disneyplus",
+    "net.mbc.shahid",
+    "tv.twitch.android.app",
+    "org.videolan.vlc",
+    "com.mxtech.videoplayer.ad",
+)
 
 /**
  * What the media apps are playing, read from their media sessions. Android shows

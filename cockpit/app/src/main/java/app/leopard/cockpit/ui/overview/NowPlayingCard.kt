@@ -53,6 +53,8 @@ import app.leopard.cockpit.ui.Capsule
 import app.leopard.cockpit.ui.GlassKind
 import app.leopard.cockpit.ui.Glyph
 import app.leopard.cockpit.ui.Icons
+import app.leopard.cockpit.ui.openZoomed
+import app.leopard.cockpit.ui.GlassIconButton
 import app.leopard.cockpit.ui.LocalNav
 import app.leopard.cockpit.ui.Txt
 import app.leopard.cockpit.ui.glass
@@ -93,6 +95,8 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
         if (tr != null) otility.screens.tap(AppId(tr.pkg), ScreenId.MAIN) { nav.openScreens(it) }
     }
     val shape = rounded(28.dp)
+    // A video (YouTube, say): a button to go and see it, full screen on the main screen.
+    val watch: (() -> Unit)? = tr?.takeIf { it.video }?.let { v -> { nav.openZoomed(AppId(v.pkg)) } }
 
     BoxWithConstraints(
         modifier
@@ -112,6 +116,10 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
         val slim = slot.size.h == 1
         val wide = maxWidth >= 560.dp
         val bigArt = maxHeight - 40.dp
+        // Narrow: the artwork grows into whatever the player below leaves, up to about
+        // two fifths of the width, so a tall card isn't left half empty.
+        val player = 60.dp + if (tr?.durationMs != null) 34.dp else 0.dp
+        val art = maxOf(100.dp, minOf(maxHeight - 40.dp - player - 20.dp, (maxWidth - 40.dp) * 0.42f))
         val title = tr?.title ?: "Not Playing"
         val detail = when {
             tr?.problem != null -> tr.problem
@@ -134,34 +142,44 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
                 Spacer(Modifier.width(8.dp))
                 PlayButton(tr, 52.dp)
                 MediaButton(Icons.next, 46.dp, tr?.canNext == true) { NowPlaying.next() }
+                // One row: the video button with the others, not over the name.
+                if (watch != null) MediaButton(Icons.video, 46.dp, true, watch)
             }
             wide -> Row(Modifier.fillMaxSize().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Artwork(tr, accent, bigArt, Modifier.pressable(open))
                 Spacer(Modifier.width(24.dp))
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    Heading(tr, info, title, detail, T.title2, open)
+                    Heading(tr, info, title, detail, T.title2, open, Modifier.padding(end = if (watch != null) WatchRoom else 0.dp))
                     Spacer(Modifier.weight(1f))
                     Player(tr, Arrangement.Start)
                 }
             }
             else -> Column(Modifier.fillMaxSize().padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Artwork(tr, accent, 100.dp, Modifier.pressable(open))
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) { Heading(tr, info, title, detail, T.headline, open) }
+                Row(verticalAlignment = if (art > 120.dp) Alignment.Top else Alignment.CenterVertically) {
+                    Artwork(tr, accent, art, Modifier.pressable(open))
+                    Spacer(Modifier.width(if (art > 120.dp) 20.dp else 16.dp))
+                    Column(Modifier.weight(1f).padding(end = if (watch != null) WatchRoom else 0.dp)) {
+                        Heading(tr, info, title, detail, T.headline, open, titleLines = if (art > 120.dp) 3 else 2)
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 Player(tr, Arrangement.Center)
             }
         }
+        if (watch != null && !slim) {
+            GlassIconButton(Icons.video, watch, Modifier.align(Alignment.TopEnd).padding(14.dp), size = 44.dp)
+        }
     }
 }
 
+/** Room the video button takes at the card's top right, kept clear of the names. */
+private val WatchRoom = 52.dp
+
 /** The app it's playing in, the song and the artist. */
 @Composable
-private fun Heading(tr: Track?, info: AppInfo?, title: String, detail: String, style: androidx.compose.ui.text.TextStyle, open: () -> Unit) {
+private fun Heading(tr: Track?, info: AppInfo?, title: String, detail: String, style: androidx.compose.ui.text.TextStyle, open: () -> Unit, modifier: Modifier = Modifier, titleLines: Int = 2) {
     val t = LocalTokens.current
-    Column(Modifier.pressable(open, scaleDown = 0.98f)) {
+    Column(modifier.pressable(open, scaleDown = 0.98f)) {
         if (info != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppIcon(info, 18.dp)
@@ -170,7 +188,7 @@ private fun Heading(tr: Track?, info: AppInfo?, title: String, detail: String, s
             }
             Spacer(Modifier.height(6.dp))
         }
-        Txt(title, style, maxLines = 2)
+        Txt(title, style, maxLines = titleLines)
         Txt(detail, T.subhead, t.text2, maxLines = 1)
     }
 }

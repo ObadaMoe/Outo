@@ -541,7 +541,7 @@ private fun SoundCard(slot: WidgetSlot, modifier: Modifier) {
 
 /** The next turn while the map guides; otherwise where to, and the places sent lately. */
 @Composable
-private fun NavigationCard(slot: WidgetSlot, modifier: Modifier) {
+internal fun NavigationCard(slot: WidgetSlot, modifier: Modifier) {
     val app = Otility.instance
     val t = LocalTokens.current
     val s by app.prefs.settings.collectAsState()
@@ -730,7 +730,7 @@ private fun ScreensNowCard(modifier: Modifier) {
     val state by app.screens.state.collectAsState()
     val apps by app.catalog.apps.collectAsState()
     val byId = apps.associateBy { it.id }
-    Card("Screens now", Icons.screens, modifier.noRipple { nav.openScreens() }) {
+    Card("Screens now", Icons.screens, modifier.noRipple { nav.openAllScreens() }) {
         ScreenId.entries.forEachIndexed { i, s ->
             if (i > 0) Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

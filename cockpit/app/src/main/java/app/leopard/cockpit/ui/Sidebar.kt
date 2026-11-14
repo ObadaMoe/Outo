@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.leopard.cockpit.Otility
+import app.leopard.cockpit.ui.carplay.Origin
 import androidx.compose.foundation.layout.offset
 import app.leopard.cockpit.ui.settings.SettingsPage
 import app.leopard.cockpit.update.UpdateState
@@ -62,6 +63,7 @@ import app.leopard.cockpit.car.HelperLauncher
 import app.leopard.cockpit.data.AppInfo
 import app.leopard.cockpit.data.DOCK_MAX
 import app.leopard.cockpit.data.Tab
+import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.DropTarget
 import app.leopard.cockpit.screens.ScreenId
@@ -71,6 +73,8 @@ import app.leopard.cockpit.ui.screens.liftable
 import app.leopard.cockpit.ui.theme.LocalTokens
 import app.leopard.cockpit.ui.theme.T
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** The sidebar's width, and how far it keeps from the window's edges. */
@@ -95,19 +99,19 @@ private const val RECENT_ON_SIDEBAR = 2
 /** The room the line above the recent apps takes. */
 private val RecentLine = 11.dp
 
-/** Settings, Apps, Screens and Home: plain icons, smaller than the apps, as CarPlay's Home is. */
+/** Settings and Home: plain icons, smaller than the apps, as CarPlay's Home is. */
 private val TabHeight = 48.dp
 
 /**
  * The sidebar, as in CarPlay: down the left side, on every tab. The apps pinned to
  * it at the top, then (under a thin line) one or two used lately that aren't pinned,
- * as CarPlay's shows the latest; then (smaller) Settings, Apps and Screens, and the
- * Overview's Home at the bottom.
+ * as CarPlay's shows the latest; then (smaller) Settings in Screen mode, and Home
+ * at the bottom.
  *
  * Tap an app to open it full screen on the main screen, zoomed in. Hold one for its
  * menu, or drag it: up and down the sidebar to move it (a recent one gets pinned
  * where it's let go), or (on the Screens tab) onto a screen. Apps are pinned by
- * dragging them here from Apps.
+ * dragging them here from All apps, or from CarPlay's Home.
  */
 @Composable
 fun Sidebar(modifier: Modifier = Modifier) {
@@ -193,16 +197,19 @@ fun Sidebar(modifier: Modifier = Modifier) {
             }
         }
 
-        // Settings, Apps, Screens and Home at the bottom, the space at the top left to the
-        // apps. A dot on Settings: a new version of Outo is ready.
-        val update by Otility.instance.updater.state.collectAsState()
-        TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
-        Spacer(Modifier.height(4.dp))
-        TabButton(Tab.APPS, Icons.apps)
-        Spacer(Modifier.height(4.dp))
-        TabButton(Tab.SCREENS, Icons.screens)
-        Spacer(Modifier.height(4.dp))
-        TabButton(Tab.OVERVIEW, Icons.homeSquare)
+        // Home at the bottom, as CarPlay's, the space above left to the apps; in Screen
+        // mode Settings above it (a dot: a new version of Outo is ready). In CarPlay mode
+        // Settings is one of Home's apps. All apps and the three screens open from Settings.
+        val mode by remember { app.prefs.settings.map { it.mode }.distinctUntilChanged() }
+            .collectAsState(app.prefs.settings.value.mode)
+        if (mode == UiMode.SCREEN) {
+            val update by Otility.instance.updater.state.collectAsState()
+            TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
+            Spacer(Modifier.height(4.dp))
+        }
+        // In CarPlay mode Home is always white, as CarPlay's is: it leaves an app, and from
+        // Home it goes to the dashboard.
+        TabButton(Tab.OVERVIEW, Icons.homeSquare, lit = mode == UiMode.SCREEN)
     }
 }
 
@@ -233,13 +240,20 @@ fun Nav.pinAt(app: AppId, p: Offset): Boolean {
     return true
 }
 
-/** Opens [app] full screen on the main screen, zoomed in (or asks first, if it's open on another screen). */
-fun Nav.openZoomed(app: AppId) {
-    // From another tab it grows out of its icon on the sidebar (see [Nav.launchFrom]),
-    // or out of the middle for an app that isn't pinned there.
+/**
+ * Opens [app] full screen on the main screen, zoomed in (or asks first, if it's open on
+ * another screen). [from]: the icon tapped, in the window's pixels, if not the sidebar's;
+ * [icon]: all of it, for CarPlay mode's window to grow out of.
+ */
+fun Nav.openZoomed(app: AppId, from: Offset? = null, icon: Rect? = null) {
+    // CarPlay mode: its window grows out of that icon, or the sidebar's.
+    val origin = icon?.takeIf { it.width > 0f } ?: sidebarIcons[app]
+    if (origin != null) launchOrigins[app] = Origin.icon(origin) else launchOrigins.remove(app)
+    // From another tab it grows out of its icon (see [Nav.launchFrom]): the one tapped,
+    // or the sidebar's, or out of the middle for an app that isn't pinned there.
     if (tab != Tab.SCREENS) {
         val y = sidebarCenters[app]
-        launchFrom = if (y != null && sidebarBounds != Rect.Zero) Offset(sidebarBounds.center.x, y) else Offset.Unspecified
+        launchFrom = from ?: if (y != null && sidebarBounds != Rect.Zero) Offset(sidebarBounds.center.x, y) else Offset.Unspecified
     }
     openScreens()
     Otility.instance.screens.tap(app, ScreenId.MAIN) { openScreens(it) }
@@ -267,13 +281,19 @@ private fun PinnedApp(a: AppInfo, running: Boolean, dim: Boolean, collapsed: Boo
         },
         spring(0.7f, 500f), label = "pinAlpha",
     )
+    // Off the sidebar: no window shrinks into where it was.
+    DisposableEffect(a.id) { onDispose { nav.sidebarIcons.remove(a.id) } }
     // Clipped, so a closed-up place takes no taps. (The touch dragging it out carries on.)
     Box(Modifier.width(SidebarWidth).height(h.coerceAtLeast(0.dp)).clipToBounds(), contentAlignment = Alignment.TopCenter) {
         AppIcon(
             a, PinIcon,
             Modifier
                 .graphicsLayer { this.alpha = alpha }
-                .onGloballyPositioned { nav.sidebarCenters[a.id] = it.boundsInRoot().center.y }
+                .onGloballyPositioned {
+                    val b = it.boundsInRoot()
+                    nav.sidebarCenters[a.id] = b.center.y
+                    nav.sidebarIcons[a.id] = b
+                }
                 .liftable(a.id, callbacks),
         )
         // On one of the screens: a dot beside it, as the dock had under it.
@@ -351,15 +371,16 @@ private fun pinnedMenu(nav: Nav, a: AppInfo, pinned: Boolean): List<MenuEntry> {
 }
 
 /**
- * Settings, Apps, Screens and the Overview's Home square, at the bottom: plain icons with nothing
- * behind them, as CarPlay's Home is. The open tab's icon turns blue. Tapped again,
- * a tab goes back to its start (zooms out of a screen, closes the large map).
+ * Settings and the Home square, at the bottom: plain icons with nothing
+ * behind them, as CarPlay's Home is. The open tab's icon turns blue ([lit]; CarPlay
+ * mode's Home stays white). Tapped again, a tab goes back to its start (zooms out of
+ * a screen, closes the large map, CarPlay's Home to its dashboard).
  */
 @Composable
-private fun TabButton(tab: Tab, icon: ImageVector, badge: Boolean = false) {
+private fun TabButton(tab: Tab, icon: ImageVector, badge: Boolean = false, lit: Boolean = true) {
     val nav = LocalNav.current
     val t = LocalTokens.current
-    val on = nav.tab == tab
+    val on = lit && nav.tab == tab
     val open by animateFloatAsState(if (on) 1f else 0f, tween(200), label = "tabOn")
     Box(
         Modifier
@@ -367,7 +388,7 @@ private fun TabButton(tab: Tab, icon: ImageVector, badge: Boolean = false) {
             .pressable({
                 // The dot is a new version: Settings opens where it's installed.
                 if (badge && tab == Tab.SETTINGS) nav.settingsPage = SettingsPage.ABOUT
-                if (nav.tab == tab) (nav.reselect ?: nav.back)?.invoke() else nav.tab = tab
+                if (nav.tab == tab) (nav.reselect ?: nav.back ?: nav.home)?.invoke() else nav.tab = tab
             }),
         contentAlignment = Alignment.Center,
     ) {

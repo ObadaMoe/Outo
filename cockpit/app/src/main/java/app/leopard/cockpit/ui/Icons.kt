@@ -109,6 +109,8 @@ object Icons {
     val leftHalf = duo(FRAME, "M6 8h5v8H6Z")
     val rightHalf = duo(FRAME, "M13 8h5v8h-5Z")
     val pip = duo(FRAME, "M12.5 11.5h5v4h-5Z")
+    /** A screen with a play mark: go and see the video. */
+    val video = duo(FRAME, "M10.2 9.1v5.8a.6.6 0 0 0 .92.5l4.6-2.9a.6.6 0 0 0 0-1l-4.6-2.9a.6.6 0 0 0-.92.5Z")
 
     /** A widget's size on the Overview's grid (6 columns by 2 rows), for size menus. */
     fun widgetSize(w: Int, h: Int): ImageVector {

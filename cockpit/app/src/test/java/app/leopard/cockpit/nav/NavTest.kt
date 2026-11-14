@@ -88,6 +88,14 @@ class NavTest {
         assertArrayEquals(expected, frame)
     }
 
+    @Test fun hudLanePicture() {
+        // 6 = 6 (lanes shown), then 7 = the picture's bytes.
+        val frame = HudFrame.encode(HudFrame.Fields(status = 0, lanePicture = byteArrayOf(1, 2, 3)))
+        assertArrayEquals(hex("0A 07 30 06 3A 03 01 02 03"), frame)
+        // No picture: neither field.
+        assertArrayEquals(hex("0A 00"), HudFrame.encode(HudFrame.Fields(status = 0, lanePicture = ByteArray(0))))
+    }
+
     @Test fun hudStopFrame() {
         assertArrayEquals(hex("0A 03 80 01 01"), HudFrame.stopped)
     }
@@ -167,6 +175,11 @@ class NavTest {
         assertTrue(Instrument.wrote("Result: Parcel(00000001    '....')"))
         assertTrue(Instrument.wrote("Result: Parcel(00000000 00000001   '........')"))
         assertFalse(Instrument.wrote("Result: Parcel(ffffffec 00000000 'S.e.c.u.r.i.t.y.')"))
+        // The car refusing the value: BYD's "unavailable" (-10011), and its other refusal.
+        assertFalse(Instrument.wrote("Result: Parcel(ffffd8e5    '....')"))
+        assertFalse(Instrument.wrote("Result: Parcel(800003e8    '....')"))
+        assertFalse(Instrument.wrote("Result: Parcel(00000000 ffffd8e5   '........')"))
+        assertTrue(Instrument.wrote("Result: Parcel(00000000    '....')"))
         assertFalse(Instrument.wrote("service: Service autoservice does not exist"))
     }
 

@@ -210,6 +210,8 @@ class TouchRouter(
 ) {
     var targets: List<TouchTarget> = emptyList()
     var gestures: Boolean = true
+    /** Off: two fingers are the app's (CarPlay mode's apps, where only the edge's Back is Otility's). */
+    var twoFingers: Boolean = true
     /** Pulls in from either edge, followed (see [EdgePull]); without it, only the left edge's Back. */
     var edgePull: EdgePull? = null
     /** The area's width: where its right edge is. */
@@ -262,7 +264,7 @@ class TouchRouter(
                 // A second finger ends a pull (and the touch stays Otility's).
                 if (pulling) { endPull(0f); return true }
                 flushEdge()
-                if (gestures && ev.pointerCount == 2) {
+                if (gestures && twoFingers && ev.pointerCount == 2) {
                     multi = ev.pointerCount
                     startX = cx(ev); startY = cy(ev); startSpan = span(ev)
                     startTime = ev.eventTime

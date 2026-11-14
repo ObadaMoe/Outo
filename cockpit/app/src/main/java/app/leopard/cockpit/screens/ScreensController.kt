@@ -11,6 +11,7 @@ import app.leopard.cockpit.car.TaskRow
 import app.leopard.cockpit.data.AppCatalog
 import app.leopard.cockpit.data.Layout
 import app.leopard.cockpit.data.Prefs
+import app.leopard.cockpit.data.SPACES_MAX
 import app.leopard.cockpit.ui.Alert
 import app.leopard.cockpit.ui.AlertButton
 import app.leopard.cockpit.ui.Alerts
@@ -639,6 +640,60 @@ class ScreensController(
 
     fun saveLayout(name: String) = prefs.saveLayout(Layout(name, _state.value))
 
+    // ---- CarPlay mode: the app switcher ------------------------------------------
+
+    /** What the main screen showed lately, one app or two side by side, the latest first. */
+    val spaces: StateFlow<List<ScreenContent>> get() = prefs.spaces
+
+    /**
+     * Home, in CarPlay mode: the main screen's apps go to the background. They're parked
+     * (running on for a while, longer while one plays) and wait in the app switcher.
+     */
+    fun sendMainToBack() {
+        val s = _state.value
+        if (s[ScreenId.MAIN] == ScreenContent.Idle) return
+        commit(s.with(ScreenId.MAIN, ScreenContent.Idle))
+    }
+
+    /** A card in the app switcher, tapped: back on the main screen as it was (a parked app as it was left). */
+    fun openSpace(space: ScreenContent) {
+        val known = space.apps.filter { catalog[it] != null }
+        if (known.size != space.apps.size || known.isEmpty()) {
+            prefs.setSpaces(prefs.spaces.value - space)
+            return
+        }
+        for (app in known) {
+            if (_pip.value == app) _pip.value = null
+            // Not straight back to the cluster before it's seen (see place).
+            if (keepsOnCluster(app)) mainGraceUntil = SystemClock.uptimeMillis() + MAIN_GRACE_MS
+        }
+        val main = DropTarget(ScreenId.MAIN, Slot.FULL)
+        val next = when (space) {
+            ScreenContent.Idle -> return
+            is ScreenContent.Single -> Screens.place(_state.value, space.app, main).state
+            is ScreenContent.Split -> Screens.place(Screens.place(_state.value, space.left, main).state, space.right, DropTarget(ScreenId.MAIN, Slot.RIGHT))
+                .state.let { Screens.setRatio(it, ScreenId.MAIN, space.ratio) }
+        }
+        if (next != _state.value) commit(next)
+    }
+
+    /**
+     * A card in the app switcher, swiped away: its apps close (the main screen's too). Not
+     * the map Home shows, nor an app in use on another screen or floating: those only
+     * leave the switcher.
+     */
+    fun closeSpace(space: ScreenContent) {
+        prefs.setSpaces(prefs.spaces.value - space)
+        val s = _state.value
+        val onMain = space.apps.filter { it in s[ScreenId.MAIN].apps }
+        if (onMain.isNotEmpty()) commit(onMain.fold(s) { st, app -> Screens.close(st, app) })
+        val map = mapApp()?.let(::AppId)
+        for (app in space.apps) {
+            if (app == map || app == _pip.value || _state.value.screenOf(app) != null) continue
+            hosts.release(app, closeApp = true)
+        }
+    }
+
     private fun commit(wanted: ScreensState) {
         val next = Screens.clamped(wanted)
         val prev = _state.value
@@ -647,6 +702,9 @@ class ScreensController(
         val shown = { s: ScreensState -> s[ScreenId.MAIN].apps + s[ScreenId.PASSENGER].apps }
         val before = shown(prev).toSet()
         shown(next).filter { it !in before }.asReversed().forEach(prefs::noteOpened)
+        // And for CarPlay mode's app switcher: what the main screen shows, as one card.
+        val main = next[ScreenId.MAIN]
+        if (main != ScreenContent.Idle && main != prev[ScreenId.MAIN]) prefs.setSpaces(Screens.noteSpace(prefs.spaces.value, main, SPACES_MAX))
         lastLocalChange = System.currentTimeMillis()
         prefs.saveLastLayout(next)
         reconcile(prev, next)

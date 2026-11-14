@@ -17,10 +17,18 @@ import org.json.JSONObject
 enum class Appearance { LIGHT, DARK, AUTO }
 enum class Accent { GLACIER, DUNE, JADE }
 enum class Tab { OVERVIEW, SCREENS, APPS, SETTINGS }
+
+/**
+ * How Outo is laid out. SCREEN: the Overview's widgets as home, and the car's three
+ * screens. CARPLAY: a home like CarPlay's, the apps on pages over the emblem, and
+ * Settings as one of them.
+ */
+enum class UiMode { SCREEN, CARPLAY }
 enum class AppView { TABLET, PHONE }
 enum class SoundMode { STREET, SPORT, TRACK }
 
 data class Settings(
+    val mode: UiMode = UiMode.SCREEN,
     // Display
     val appearance: Appearance = Appearance.DARK,
     val accent: Accent = Accent.GLACIER,
@@ -38,7 +46,8 @@ data class Settings(
     val restoreLayout: Boolean = true,
     // Startup
     val startWithCar: Boolean = true,
-    val startTab: Tab = Tab.SCREENS,
+    /** Home (the Overview, or CarPlay's home) or the three screens. */
+    val startTab: Tab = Tab.OVERVIEW,
     // Driver cluster
     val clusterCode: Int = 30,
     /**
@@ -87,6 +96,9 @@ const val DOCK_MAX = 10
 
 /** How many apps [Prefs.recents] remembers. */
 const val RECENTS_MAX = 12
+
+/** How many cards CarPlay mode's app switcher keeps ([Prefs.spaces]). */
+const val SPACES_MAX = 12
 
 /** Small, synchronous store on SharedPreferences, exposed as flows. */
 class Prefs(context: Context) {
@@ -147,6 +159,27 @@ class Prefs(context: Context) {
         _recents.value = list
         sp.edit().putString("recents", JSONArray(list.map { it.pkg }).toString()).apply()
     }
+
+    // ---- What the main screen showed lately (CarPlay mode's app switcher) ------------
+
+    private val _spaces = MutableStateFlow(readSpaces())
+    /**
+     * The main screen's apps lately, one app or two side by side, the latest first: the
+     * cards of CarPlay mode's app switcher (see Screens.noteSpace). Until there are any,
+     * the apps used lately, each on its own.
+     */
+    val spaces: StateFlow<List<ScreenContent>> = _spaces.asStateFlow()
+
+    fun setSpaces(list: List<ScreenContent>) {
+        if (list == _spaces.value) return
+        _spaces.value = list
+        sp.edit().putString("spaces", JSONArray(list.map { contentJson(it) }).toString()).apply()
+    }
+
+    private fun readSpaces(): List<ScreenContent> = sp.getString("spaces", null)?.let { s ->
+        runCatching { JSONArray(s).let { a -> List(a.length()) { parseContent(a.getJSONObject(it)) } } }.getOrNull()
+            ?.filter { it != ScreenContent.Idle }
+    } ?: _recents.value.take(6).map { ScreenContent.Single(it) }
 
     // ---- The map app used last -------------------------------------------------
 
@@ -275,28 +308,32 @@ class Prefs(context: Context) {
     private fun stateJson(s: ScreensState): JSONObject {
         val o = JSONObject()
         for ((id, c) in s.screens) {
-            o.put(id.name, when (c) {
-                ScreenContent.Idle -> JSONObject().put("t", "idle")
-                is ScreenContent.Single -> JSONObject().put("t", "single").put("a", c.app.pkg)
-                is ScreenContent.Split -> JSONObject().put("t", "split").put("l", c.left.pkg).put("r", c.right.pkg).put("ratio", c.ratio.toDouble())
-            })
+            o.put(id.name, contentJson(c))
         }
         return o
+    }
+
+    private fun contentJson(c: ScreenContent): JSONObject = when (c) {
+        ScreenContent.Idle -> JSONObject().put("t", "idle")
+        is ScreenContent.Single -> JSONObject().put("t", "single").put("a", c.app.pkg)
+        is ScreenContent.Split -> JSONObject().put("t", "split").put("l", c.left.pkg).put("r", c.right.pkg).put("ratio", c.ratio.toDouble())
+    }
+
+    private fun parseContent(c: JSONObject): ScreenContent = when (c.optString("t")) {
+        "single" -> ScreenContent.Single(AppId(c.getString("a")))
+        // Within the limits: an older Otility could save one caught mid-drag.
+        "split" -> ScreenContent.Split(
+            AppId(c.getString("l")), AppId(c.getString("r")),
+            Screens.clampRatio(c.optDouble("ratio", 0.5).toFloat()),
+        )
+        else -> ScreenContent.Idle
     }
 
     private fun parseState(o: JSONObject): ScreensState {
         var s = ScreensState()
         for (id in ScreenId.entries) {
             val c = o.optJSONObject(id.name) ?: continue
-            s = s.with(id, when (c.optString("t")) {
-                "single" -> ScreenContent.Single(AppId(c.getString("a")))
-                // Within the limits: an older Otility could save one caught mid-drag.
-                "split" -> ScreenContent.Split(
-                    AppId(c.getString("l")), AppId(c.getString("r")),
-                    Screens.clampRatio(c.optDouble("ratio", 0.5).toFloat()),
-                )
-                else -> ScreenContent.Idle
-            })
+            s = s.with(id, parseContent(c))
         }
         return s
     }
@@ -307,6 +344,7 @@ class Prefs(context: Context) {
     }
 
     private fun settingsJson(s: Settings) = JSONObject().apply {
+        put("mode", s.mode.name)
         put("appearance", s.appearance.name); put("accent", s.accent.name)
         put("tintedGlass", s.tintedGlass); put("reduceTransparency", s.reduceTransparency)
         put("showEmblem", s.showEmblem); put("dimEmblemSeconds", s.dimEmblemSeconds)
@@ -324,12 +362,23 @@ class Prefs(context: Context) {
         put("soundRoughness", s.soundRoughness.toDouble()); put("soundCrackle", s.soundCrackle.toDouble())
     }
 
+    /**
+     * Home or the three screens. Before the modes, Outo opened on the screens unless
+     * told otherwise: home is the start now. Apps and Settings are no longer choices.
+     */
+    private fun startTab(o: JSONObject, d: Settings): Tab {
+        val saved = runCatching { Tab.valueOf(o.getString("startTab")) }.getOrNull() ?: return d.startTab
+        if (!o.has("mode")) return d.startTab
+        return if (saved == Tab.SCREENS) Tab.SCREENS else Tab.OVERVIEW
+    }
+
     private fun parseSettings(o: JSONObject): Settings {
         val d = Settings()
         fun b(k: String, def: Boolean) = o.optBoolean(k, def)
         fun i(k: String, def: Int) = o.optInt(k, def)
         fun f(k: String, def: Float) = o.optDouble(k, def.toDouble()).toFloat()
         return Settings(
+            mode = runCatching { UiMode.valueOf(o.getString("mode")) }.getOrDefault(d.mode),
             appearance = runCatching { Appearance.valueOf(o.getString("appearance")) }.getOrDefault(d.appearance),
             accent = runCatching { Accent.valueOf(o.getString("accent")) }.getOrDefault(d.accent),
             tintedGlass = b("tintedGlass", d.tintedGlass),
@@ -343,7 +392,7 @@ class Prefs(context: Context) {
             restoreLayout = b("restoreLayout", d.restoreLayout),
             startWithCar = b("startWithCar", d.startWithCar),
             autoUpdate = b("autoUpdate", d.autoUpdate),
-            startTab = runCatching { Tab.valueOf(o.getString("startTab")) }.getOrDefault(d.startTab),
+            startTab = startTab(o, d),
             clusterCode = i("clusterCode", d.clusterCode),
             // Before the switch: on if the cluster had a map, map only.
             mapOnCluster = if (o.has("mapOnCluster")) o.optBoolean("mapOnCluster") else b("clusterMapOnly", true) &&

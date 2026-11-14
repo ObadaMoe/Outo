@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import app.leopard.cockpit.media.NowPlaying
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -183,7 +184,8 @@ class CarBridge {
  * Apps on the main screen live inside Otility: each one gets its own hidden
  * display whose picture is drawn into Otility's view, so we can resize, swap,
  * split and gesture over them. When an app leaves the main screen its display
- * is kept for a few minutes ("parked") so bringing it back is instant.
+ * is kept for a few minutes ("parked") so bringing it back is instant; the app
+ * that's playing is kept until another plays, so it comes back on its video.
  */
 class HostManager(private val bridge: CarBridge, private val store: android.content.SharedPreferences? = null) {
 
@@ -192,7 +194,7 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
         /** The helper that made [displayId]; a restarted helper means the display is gone. */
         var owner: IBinder? = null
         /** What the view last gave us, so the display can be made again after a restart. */
-        var surface: Surface? = null
+        @Volatile var surface: Surface? = null
         var component: String = ""
         /**
          * Sets the view's buffer to the app's real size. Android's TextureView resets
@@ -251,9 +253,16 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
     fun attach(
         app: AppId, component: String, surface: Surface, w: Int, h: Int, dpi: Int,
         create: Boolean = true,
+        /**
+         * Only while the display still draws into this one (a view moving it between its
+         * own two): another view that has taken the app meanwhile (one tab fading into
+         * another, both showing it) keeps it, at its size.
+         */
+        onlyFrom: Surface? = null,
         fit: (Int, Int) -> Unit,
     ) = bridge.scope.launch {
         val host = synchronized(hosts) { if (create) hosts.getOrPut(app) { Host() } else hosts[app] } ?: return@launch
+        if (onlyFrom != null && host.surface !== onlyFrom) return@launch
         saveHosted()
         host.parkJob?.cancel()
         host.surface = surface
@@ -361,6 +370,8 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
     /** Makes the app's hidden display and puts the app in it. Runs on the bridge's lane. */
     private companion object {
         const val HOSTED = "hosted_apps"
+        /** How often a parked app that's playing is looked at again (see [parkNow]). */
+        const val KEEP_PLAYING_CHECK_MS = 30_000L
     }
 
     private fun create(helper: IOtilityHelper, app: AppId, host: Host, surface: Surface?) {
@@ -427,6 +438,13 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
         host.w = w; host.h = h; host.dpi = dpi
     }
 
+    /** The size the app's display has now (null: none yet). */
+    fun sizeOf(app: AppId): androidx.compose.ui.unit.IntSize? = synchronized(hosts) { hosts[app] }
+        ?.takeIf { it.displayId >= 0 }?.let { androidx.compose.ui.unit.IntSize(it.w, it.h) }
+
+    /** Whether the app's display draws into [surface] right now. */
+    fun drawsInto(app: AppId, surface: Surface): Boolean = synchronized(hosts) { hosts[app] }?.surface === surface
+
     /**
      * The view went away (tab change, zoom, Otility in the background): keep the app
      * running. [surface] is the view's: if another view has the app by now (one tab
@@ -453,6 +471,10 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
         host.parkJob?.cancel()
         host.parkJob = bridge.scope.launch {
             delay(closeAfterMs)
+            // What's playing (or paused on its song or video) stays, so its icon or Now
+            // Playing's video button brings it back as it was: it closes once another
+            // app plays, or none has anything.
+            while (NowPlaying.track.value?.pkg == app.pkg) delay(KEEP_PLAYING_CHECK_MS)
             release(app, closeApp = true)
         }
     }

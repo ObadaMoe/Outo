@@ -94,4 +94,14 @@ class NowPlayingTest {
         val grey = IntArray(100) { i -> if (i % 2 == 0) 0xFF000000.toInt() else 0xFFCCCCCC.toInt() }
         assertNull(MediaColor.accentOf(grey))
     }
+
+    @Test
+    fun videoAppsAreVideo() {
+        fun track(pkg: String) = Track(pkg, "Song", null, null, null, playing = true, positionMs = 0, at = 0, speed = 1f,
+            durationMs = null, canPrevious = false, canNext = false)
+        assertTrue(track("com.google.android.youtube").video)
+        // YouTube Music plays songs: no picture to go and see.
+        assertEquals(false, track("com.google.android.apps.youtube.music").video)
+        assertEquals(false, track("com.spotify.music").video)
+    }
 }

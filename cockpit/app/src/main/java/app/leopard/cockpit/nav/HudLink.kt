@@ -60,6 +60,8 @@ class HudLink(private val context: Context, private val prefs: Prefs, private va
         private const val PERIOD = 400L
         /** The arrow picture's size. BYD's map sends 34 px, 7orr 128 px; the car decides what looks right. */
         private const val ICON_PX = 64
+        /** Waze's limit sign in the lane picture. Others use 96 px; the car decides how big it shows. */
+        private const val SIGN_PX = 96
     }
 
     private val _status = MutableStateFlow("Off")
@@ -94,8 +96,15 @@ class HudLink(private val context: Context, private val prefs: Prefs, private va
                             _status.value = "On. Waiting for a route"
                         }
                         else -> {
-                            val frame = frame(turn)
+                            // Made again when Waze's limit changes on the same turn.
+                            var sign = -1
+                            var frame = ByteArray(0)
                             while (true) {
+                                val now = wazeLimit()
+                                if (now != sign) {
+                                    sign = now
+                                    frame = frame(turn, now)
+                                }
                                 send(frame)
                                 delay(PERIOD)
                             }
@@ -105,7 +114,16 @@ class HudLink(private val context: Context, private val prefs: Prefs, private va
         }
     }
 
-    private fun frame(t: NextTurn): ByteArray {
+    /**
+     * Waze's limit for the lane picture (0: none): only the map's, as the blue ring
+     * says, never the camera's, and only with the HUD limit setting on.
+     */
+    private fun wazeLimit(): Int {
+        if (!prefs.settings.value.hudSpeedLimit || roadLimit.fromCamera) return 0
+        return roadLimit.current.takeIf { it in 5..250 } ?: 0
+    }
+
+    private fun frame(t: NextTurn, sign: Int): ByteArray {
         val icon = when {
             t.maneuver != Maneuver.UNKNOWN -> TurnArt.png(t.maneuver, ICON_PX)
             t.arrow != null -> png(t.arrow)
@@ -128,6 +146,7 @@ class HudLink(private val context: Context, private val prefs: Prefs, private va
             latitude = HudRoute.START_LATITUDE,
             guideLine = route.line,
             guidePoint = route.point,
+            lanePicture = if (sign > 0) LimitSign.png(sign, SIGN_PX) else null,
         )
         val bytes = HudFrame.encode(f)
         return if (bytes.size > 65_536) HudFrame.encode(f.withoutIcon()) else bytes
