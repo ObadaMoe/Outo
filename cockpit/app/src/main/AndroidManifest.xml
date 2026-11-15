@@ -20,6 +20,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Media apps that play when asked (Now Playing's sources), as Android Auto finds them. -->
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
         <!-- The car's SOME/IP gateway, which carries turns to the windshield display (HUD). -->
         <package android:name="com.ts.car.someip.service" />
     </queries>

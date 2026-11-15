@@ -19,7 +19,8 @@ enum class Appearance { LIGHT, DARK, AUTO }
 /** When an iPhone notification shows what it says, not only who it's from. */
 enum class NoteText { ALWAYS, PARKED, NEVER }
 enum class Accent { GLACIER, DUNE, JADE }
-enum class Tab { OVERVIEW, SCREENS, APPS, SETTINGS }
+/** NOW_PLAYING: CarPlay mode's full player, opened from Home's Now Playing card. */
+enum class Tab { OVERVIEW, SCREENS, APPS, SETTINGS, NOW_PLAYING }
 
 /**
  * How Outo is laid out. SCREEN: the Overview's widgets as home, and the car's three
@@ -236,6 +237,20 @@ class Prefs(context: Context) {
         val withMedia = saved.add(WidgetKind.MEDIA)
         sp.edit().putBoolean("widgetsMedia", true).putString("widgets", withMedia.toJson().toString()).apply()
         return withMedia
+    }
+
+    // ---- CarPlay mode's Home ---------------------------------------------------
+
+    private val _carHome = MutableStateFlow(
+        sp.getString("carHome", null)?.let { s -> runCatching { CarHome.fromJson(JSONObject(s)) }.getOrNull() } ?: CarHome(),
+    )
+    /** CarPlay mode's Home as the driver arranged it: the apps' order, hidden apps, the dashboard's cards. */
+    val carHome: StateFlow<CarHome> = _carHome.asStateFlow()
+
+    fun setCarHome(home: CarHome) {
+        if (home == _carHome.value) return
+        _carHome.value = home
+        sp.edit().putString("carHome", home.toJson().toString()).apply()
     }
 
     // ---- Places from the phone -----------------------------------------------

@@ -235,6 +235,13 @@ fun NotificationsCard(modifier: Modifier = Modifier) {
             Txt("Clear", T.subhead.copy(fontWeight = FontWeight.SemiBold), t.accText, Modifier.pressable({ PhoneNotes.clear() }), maxLines = 1)
         },
     ) {
+        // In a stack the driver chose it for, with none yet: say so.
+        if (notes.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Txt("No notifications from your iPhone", T.subhead, t.text2, maxLines = 2)
+            }
+            return@Card
+        }
         // A new one: back up to it.
         val list = rememberLazyListState()
         LaunchedEffect(notes.firstOrNull()?.uid) { list.animateScrollToItem(0) }

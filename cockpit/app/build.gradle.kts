@@ -14,8 +14,8 @@ android {
         minSdk = 29
         // The car runs Android 13 (API 33).
         targetSdk = 33
-        versionCode = 35
-        versionName = "0.5.21"
+        versionCode = 36
+        versionName = "0.5.22"
     }
 
     buildTypes {
@@ -67,4 +67,6 @@ dependencies {
     implementation("dev.mobile:dadb:2.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for unit tests (Android's is only stubs off the device).
+    testImplementation("org.json:json:20240303")
 }

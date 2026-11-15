@@ -83,8 +83,8 @@ internal fun AnimatedContentTransitionScope<Pair<Tab, Boolean>>.tabMotion(carPla
     val (from, fromApps) = initialState
     val (to, toApps) = targetState
     // Settings is one of Home's apps in CarPlay mode: it opens and closes as they do.
-    val intoApps = (to == Tab.SCREENS && toApps) || to == Tab.SETTINGS
-    val outOfApps = (from == Tab.SCREENS && fromApps) || from == Tab.SETTINGS
+    val intoApps = (to == Tab.SCREENS && toApps) || to == Tab.SETTINGS || to == Tab.NOW_PLAYING
+    val outOfApps = (from == Tab.SCREENS && fromApps) || from == Tab.SETTINGS || from == Tab.NOW_PLAYING
     return when {
         intoApps -> ContentTransform(
             EnterTransition.None,

@@ -71,6 +71,7 @@ import app.leopard.cockpit.ui.carplay.AppSwitcherHost
 import app.leopard.cockpit.ui.carplay.CarPlayApps
 import app.leopard.cockpit.ui.carplay.CarPlayHome
 import app.leopard.cockpit.ui.carplay.CarPlaySettings
+import app.leopard.cockpit.ui.carplay.CarPlayNowPlaying
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.ui.apps.AppsTab
@@ -159,6 +160,10 @@ class Nav(start: Tab) {
     internal var settingsOrigin: Origin? = null
     /** CarPlay mode: Settings' tile on Home, in the window's pixels: its window shrinks back into it. */
     var settingsTile = Rect.Zero
+    /** CarPlay mode: Home's Now Playing card tapped, which the full player grows out of. */
+    internal var nowPlayingOrigin: Origin? = null
+    /** CarPlay mode: Home's Now Playing card, in the window's pixels: the full player shrinks back into it. */
+    var nowPlayingCard = Rect.Zero
     fun openScreens(zoom: ScreenId? = null) {
         tab = Tab.SCREENS
         zoomRequest = zoom
@@ -272,6 +277,14 @@ fun OtilityApp(app: Otility) {
                         }
                         else if (tab == Tab.SCREENS) ScreensTab()
                         else if (tab == Tab.OVERVIEW && carPlay) CarPlayHome()
+                        else if (tab == Tab.NOW_PLAYING) {
+                            // Grows out of Home's Now Playing card, and back into it.
+                            val grown by transition.animateFloat(
+                                { if (targetState == EnterExitState.Visible) Motion.grow() else Motion.shrink() },
+                                label = "nowPlaying",
+                            ) { if (it == EnterExitState.Visible) 1f else 0f }
+                            CarPlayNowPlaying(grown = { grown }, leaving = transition.targetState == EnterExitState.PostExit)
+                        }
                         else if (tab == Tab.SETTINGS && carPlay) {
                             // One of Home's apps: it grows out of its tile, and back into it.
                             val grown by transition.animateFloat(
@@ -285,7 +298,7 @@ fun OtilityApp(app: Otility) {
                                 Tab.OVERVIEW -> OverviewTab()
                                 Tab.APPS -> AppsTab()
                                 Tab.SETTINGS -> SettingsTab()
-                                Tab.SCREENS -> {}
+                                Tab.SCREENS, Tab.NOW_PLAYING -> {}
                             }
                         }
                     }

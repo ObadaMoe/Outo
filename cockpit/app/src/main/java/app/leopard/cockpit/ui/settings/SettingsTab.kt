@@ -535,7 +535,7 @@ private fun NavigationPage() {
     RecentPlacesGroup()
 }
 
-/** Pairing the driver's iPhone: a QR code for the page, and the link for a Share-menu shortcut. */
+/** Pairing the driver's iPhone: a QR code for the page, which walks through making the Send to Car shortcut. */
 @Composable
 private fun PhoneGroup() {
     val s = settings()
@@ -575,19 +575,13 @@ private fun PhoneGroup() {
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     QrCode(page)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Txt("Pair your iPhone", T.headline)
-                        Txt("1. Scan this code with the iPhone camera and open the page.", T.subhead, t.text2)
-                        Txt("2. In Safari, tap Share › Add to Home Screen.", T.subhead, t.text2)
-                        Txt("3. Type or paste a place and tap Drive there.", T.subhead, t.text2)
+                        Txt("Set up Send to Car", T.headline)
+                        Txt("Scan this code with the iPhone camera. The page walks you through adding Send to Car to the Share menu.", T.subhead, t.text2)
+                        Txt("Then share a place from WhatsApp, Waze or Google Maps and tap Send to Car.", T.subhead, t.text2)
                         Spacer(Modifier.height(4.dp))
                         Txt(page, T.footnote.copy(fontFeatureSettings = "tnum"), t.text2)
                     }
                 }
-                Separator()
-                SettingRow(
-                    "Share-menu shortcut",
-                    subtitle = "Shortcuts › Get Contents of URL › ${app.phone.shortcutLink(ip)} · POST · Form field \"to\" = Shortcut Input · Show in Share Sheet",
-                )
             }
             last?.let { r ->
                 Separator()

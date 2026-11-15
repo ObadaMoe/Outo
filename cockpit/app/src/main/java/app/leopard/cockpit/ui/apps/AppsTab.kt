@@ -109,7 +109,11 @@ internal fun appMenu(nav: Nav, a: AppInfo): List<MenuEntry> {
  * on a screen.
  */
 @Composable
-internal fun AppTile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier, label: TextStyle = T.footnote) {
+internal fun AppTile(
+    a: AppInfo, icon: Dp, modifier: Modifier = Modifier, label: TextStyle = T.footnote,
+    /** More for its menu, after the app's own (CarPlay Home's Edit Home Screen). */
+    more: List<MenuEntry> = emptyList(),
+) {
     val nav = LocalNav.current
     val t = LocalTokens.current
     val state by Otility.instance.screens.state.collectAsState()
@@ -122,7 +126,7 @@ internal fun AppTile(a: AppInfo, icon: Dp, modifier: Modifier = Modifier, label:
             a, icon,
             Modifier.onGloballyPositioned { iconAt = it.boundsInRoot() }.liftable(a.id, LiftCallbacks(
                 onTap = open,
-                onHold = { bounds -> nav.menu = MenuRequest(bounds, appMenu(nav, a), a) },
+                onHold = { bounds -> nav.menu = MenuRequest(bounds, appMenu(nav, a) + more, a) },
                 onDragStart = { p ->
                     nav.menu = null
                     nav.dragging = a.id

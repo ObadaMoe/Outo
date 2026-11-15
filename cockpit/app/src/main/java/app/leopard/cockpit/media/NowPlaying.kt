@@ -5,7 +5,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadata
+import android.content.Intent
+import android.media.browse.MediaBrowser
 import android.media.session.MediaController
+import android.os.Bundle
+import android.os.Looper
+import android.service.media.MediaBrowserService
+import android.view.KeyEvent
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -43,6 +49,8 @@ data class Track(
     val durationMs: Long?,
     val canPrevious: Boolean,
     val canNext: Boolean,
+    /** Whether the app takes a new place in the track (the full player's bar can be dragged). */
+    val canSeek: Boolean = false,
     /** Why the app couldn't play, in its own words, when it last failed. */
     val problem: String? = null,
 ) {
@@ -144,10 +152,107 @@ object NowPlaying {
         current?.transportControls?.stop()
     }
 
+    /** To [ms] into the track. */
+    fun seekTo(ms: Long) {
+        current?.transportControls?.seekTo(ms.coerceAtLeast(0))
+    }
+
+    private val _sessions = MutableStateFlow<List<String>>(emptyList())
+    /** The apps with a media session now (most important first, as Android gives them). */
+    val sessions: StateFlow<List<String>> = _sessions.asStateFlow()
+
+    /**
+     * The apps that can be asked to play without opening them: those with a media browser
+     * (as Android Auto plays them: Spotify, YouTube Music, most radio apps), and those with
+     * a media session now. Not Outo.
+     */
+    fun mediaApps(context: Context): List<String> {
+        val own = context.packageName
+        val browsers = runCatching {
+            context.packageManager.queryIntentServices(Intent(MediaBrowserService.SERVICE_INTERFACE), 0)
+                .map { it.serviceInfo.packageName }
+        }.getOrDefault(emptyList())
+        return (_sessions.value + browsers).distinct().filter { it != own }
+    }
+
+    /** The media browser kept open a while after asking an app to play (closing it at once can stop it). */
+    private var browser: MediaBrowser? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var failCheck: Runnable? = null
+
+    /**
+     * [pkg] playing, the app playing now paused: from its session if it has one; else
+     * through its media browser, asking for what it played last (as Android Auto does);
+     * else with a play key sent to it. [onFail] (on the main thread) when it isn't
+     * playing a few seconds later: the app has to be opened to choose something.
+     */
+    fun playFrom(pkg: String, onFail: () -> Unit) {
+        worker.post {
+            val ctx = context ?: return@post
+            failCheck?.let { main.removeCallbacks(it) }
+            controllers.filter { it.packageName != pkg && isPlaying(it.playbackState) }
+                .forEach { runCatching { it.transportControls.pause() } }
+            val mine = controllers.firstOrNull { it.packageName == pkg && titleOf(it.metadata) != null }
+            when {
+                mine != null -> mine.transportControls.play()
+                !viaBrowser(ctx, pkg) -> playKey(ctx, pkg)
+            }
+            val check = Runnable {
+                worker.post {
+                    val playing = controllers.any { it.packageName == pkg && isPlaying(it.playbackState) }
+                    if (!playing) main.post(onFail)
+                }
+            }
+            failCheck = check
+            main.postDelayed(check, PLAY_WAIT_MS)
+        }
+    }
+
+    /** Whether [pkg] has a media browser to ask (asked, then; a refusal sends the play key). */
+    private fun viaBrowser(ctx: Context, pkg: String): Boolean {
+        val service = runCatching {
+            ctx.packageManager.queryIntentServices(Intent(MediaBrowserService.SERVICE_INTERFACE).setPackage(pkg), 0)
+                .firstOrNull()?.serviceInfo
+        }.getOrNull() ?: return false
+        runCatching { browser?.disconnect() }
+        val hints = Bundle().apply { putBoolean(MediaBrowserService.BrowserRoot.EXTRA_RECENT, true) }
+        lateinit var b: MediaBrowser
+        b = MediaBrowser(ctx, ComponentName(service.packageName, service.name), object : MediaBrowser.ConnectionCallback() {
+            override fun onConnected() {
+                runCatching { MediaController(ctx, b.sessionToken).transportControls.play() }
+                    .onFailure { Log.w(TAG, "play from $pkg", it) }
+                worker.postDelayed({ if (browser === b) { runCatching { b.disconnect() }; browser = null } }, BROWSER_KEEP_MS)
+            }
+            override fun onConnectionFailed() {
+                Log.i(TAG, "media browser of $pkg refused")
+                playKey(ctx, pkg)
+            }
+        }, hints)
+        browser = b
+        runCatching { b.connect() }.onFailure { playKey(ctx, pkg); return true }
+        return true
+    }
+
+    /** A play key, sent to [pkg] only (most media apps take it to play what they played last). */
+    private fun playKey(ctx: Context, pkg: String) {
+        for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            runCatching {
+                ctx.sendBroadcast(
+                    Intent(Intent.ACTION_MEDIA_BUTTON).setPackage(pkg)
+                        .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(action, KeyEvent.KEYCODE_MEDIA_PLAY)),
+                )
+            }
+        }
+    }
+
+    private const val PLAY_WAIT_MS = 4_000L
+    private const val BROWSER_KEEP_MS = 30_000L
+
     private fun watch(list: List<MediaController>) {
         controllers.forEach { runCatching { it.unregisterCallback(callback) } }
         val own = context?.packageName
         controllers = list.filter { it.packageName != own }
+        _sessions.value = controllers.map { it.packageName }.distinct()
         controllers.forEach { c -> runCatching { c.registerCallback(callback, worker) } }
         refresh()
     }
@@ -220,6 +325,7 @@ object NowPlaying {
             // Apps that list no actions at all still usually skip.
             canPrevious = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L,
             canNext = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L,
+            canSeek = (actions and PlaybackState.ACTION_SEEK_TO) != 0L,
             problem = if (s?.state == PlaybackState.STATE_ERROR) {
                 s.errorMessage?.toString()?.takeIf { it.isNotBlank() } ?: "Couldn't play"
             } else null,

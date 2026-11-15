@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.leopard.cockpit.Otility
 import app.leopard.cockpit.data.AppInfo
+import app.leopard.cockpit.data.Tab
+import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.data.WidgetSlot
 import app.leopard.cockpit.media.NowPlaying
 import app.leopard.cockpit.media.Track
@@ -126,12 +128,18 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
     val tr = track ?: held
     val info = tr?.let { k -> apps.firstOrNull { it.id.pkg == k.pkg } }
     val accent by animateColorAsState(tr?.accent?.let { Color(it) } ?: t.acc, tween(600), label = "mediaAccent")
-    val open: () -> Unit = {
-        if (tr != null) otility.screens.tap(AppId(tr.pkg), ScreenId.MAIN) { nav.openScreens(it) }
-    }
     val shape = rounded(28.dp)
     val density = LocalDensity.current
     var cardAt by remember { mutableStateOf(Rect.Zero) }
+    val settings by otility.prefs.settings.collectAsState()
+    // CarPlay mode: the full player, growing out of this card (its sources too, so it
+    // opens with nothing playing). Screen mode: the app, on the main screen.
+    val open: () -> Unit = {
+        if (settings.mode == UiMode.CARPLAY) {
+            if (cardAt.width > 0f) nav.nowPlayingOrigin = Origin(cardAt, with(density) { 28.dp.toPx() }, Origin.Kind.CARD)
+            nav.tab = Tab.NOW_PLAYING
+        } else if (tr != null) otility.screens.tap(AppId(tr.pkg), ScreenId.MAIN) { nav.openScreens(it) }
+    }
     val state by otility.screens.state.collectAsState()
     val pip by otility.screens.pip.collectAsState()
     // The app full on the main screen, growing out of this card.
@@ -149,7 +157,7 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
 
     BoxWithConstraints(
         modifier
-            .onGloballyPositioned { cardAt = it.boundsInRoot() }
+            .onGloballyPositioned { cardAt = it.boundsInRoot(); nav.nowPlayingCard = cardAt }
             .glass(shape, GlassKind.Widget, tint = lerp(t.card, accent.copy(alpha = t.card.alpha), 0.32f))
             .clip(shape),
     ) {
@@ -433,7 +441,7 @@ private fun Progress(tr: Track, showTimes: Boolean, tint: Color? = null) {
 
 /** The artwork, or a note on the artwork's colour when the app gives none. */
 @Composable
-private fun Artwork(tr: Track?, accent: Color, size: Dp, modifier: Modifier = Modifier, fill: Boolean = false) {
+internal fun Artwork(tr: Track?, accent: Color, size: Dp, modifier: Modifier = Modifier, fill: Boolean = false) {
     val art = remember(tr?.art) { tr?.art?.asImageBitmap() }
     Box(
         modifier
@@ -446,7 +454,7 @@ private fun Artwork(tr: Track?, accent: Color, size: Dp, modifier: Modifier = Mo
     }
 }
 
-private fun clock(ms: Long): String {
+internal fun clock(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }

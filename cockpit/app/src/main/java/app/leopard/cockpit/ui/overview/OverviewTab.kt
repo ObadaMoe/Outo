@@ -337,6 +337,27 @@ private fun Widget(slot: WidgetSlot) {
     }
 }
 
+/**
+ * One of the Overview's cards on CarPlay Home's dashboard, beside the map: the size of
+ * half the column there, as the Overview's "Half" widgets are.
+ */
+@Composable
+internal fun DashboardWidget(kind: WidgetKind, modifier: Modifier) {
+    val slot = WidgetSlot(kind, WidgetSize(3, 2))
+    when (kind) {
+        WidgetKind.ENERGY -> EnergyCard(vehicle(), slot, modifier)
+        WidgetKind.SOUND -> SoundCard(slot, modifier)
+        WidgetKind.NAVIGATION -> NavigationCard(slot, modifier)
+        WidgetKind.DRIVE -> DriveCard(vehicle(), slot, modifier)
+        WidgetKind.CLIMATE -> ClimateCard(vehicle(), slot, modifier)
+        WidgetKind.TYRES -> TyresCard(vehicle(), modifier)
+        WidgetKind.SCREENS -> ScreensNowCard(modifier)
+        WidgetKind.WEEK -> WeekCard(slot, modifier)
+        WidgetKind.MEDIA -> NowPlayingCard(slot, modifier)
+        WidgetKind.MAP -> {}
+    }
+}
+
 /** The icon each widget goes by (in its card and in Add Widget). */
 fun widgetIcon(kind: WidgetKind): ImageVector = when (kind) {
     WidgetKind.ENERGY -> Icons.energy
