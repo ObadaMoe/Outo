@@ -83,6 +83,9 @@ class Navigator(
         private const val TAG = "Otility"
         /** How long the map reader may take to start before it's switched off and on. */
         private const val READER_START = 6_000L
+        /** How often the reader's connection is looked at, and the least time between restarts. */
+        private const val READER_CHECK = 20_000L
+        private const val READER_RETRY = 60_000L
         /** The apps "Straight to the driver cluster" applies to. */
         val CLUSTER_APPS = setOf("com.waze", "com.google.android.apps.maps", "app.revanced.android.apps.maps")
 
@@ -350,24 +353,40 @@ class Navigator(
     }
 
     /**
-     * The car's switch-off force-stops Otility, and Android then keeps the reader as
-     * crashed: still switched on, but never started again, so no directions are read
-     * until it's switched off and on. That, when it hasn't started a while after the
-     * helper is back.
+     * Android can keep the reader switched on but not connected: after the car's
+     * switch-off force-stops Outo ("crashed"), and after an update, when the car
+     * dropped every app's reader at once. No directions are read until it's switched
+     * off and on. So while it's wanted, look every little while whether Android has it
+     * connected (not just whether it once started), and if not, switch it off and on.
      */
     private suspend fun restartStuckReader() {
-        if (withTimeoutOrNull(READER_START) { MapScreenReader.running.first { it } } != null) return
-        if (!readerOn()) return
-        Log.i(TAG, "map reader on but not running: switching it off and on")
-        bridge.scope.launch {
-            runCatching {
-                val h = bridge.helper ?: return@launch
-                // Apart, so Android sees it off (which clears "crashed") before it's on again.
-                h.accessibilityAccess(false)
-                delay(1500)
-                h.accessibilityAccess(true)
-            }.onFailure { Log.w(TAG, "map reader restart", it) }
+        var lastRestart = 0L
+        delay(READER_START)
+        while (true) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (readerOn() && !readerConnected() && (lastRestart == 0L || now - lastRestart > READER_RETRY)) {
+                lastRestart = now
+                Log.i(TAG, "map reader on but not connected: switching it off and on")
+                val h = bridge.helper ?: return
+                runCatching {
+                    // Apart, so Android sees it off (which clears "crashed") before it's on again.
+                    withContext(Dispatchers.IO) {
+                        h.accessibilityAccess(false)
+                        delay(1500)
+                        h.accessibilityAccess(true)
+                    }
+                }.onFailure { Log.w(TAG, "map reader restart", it) }
+            }
+            delay(READER_CHECK)
         }
+    }
+
+    /** Android has the reader connected: its list of enabled services holds only connected ones. */
+    private fun readerConnected(): Boolean {
+        val am = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java) ?: return true
+        val list = runCatching { am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK) }
+            .getOrNull() ?: return MapScreenReader.running.value
+        return list.any { it.resolveInfo?.serviceInfo?.let { s -> s.packageName == context.packageName && s.name.endsWith(".nav.MapScreenReader") } == true }
     }
 
     private fun setReader(allow: Boolean) {
