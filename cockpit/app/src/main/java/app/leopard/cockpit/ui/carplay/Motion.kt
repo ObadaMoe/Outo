@@ -74,16 +74,17 @@ internal data class Origin(val rect: Rect, val corner: Float, val kind: Kind, va
 /**
  * How CarPlay mode's pages change. Into the apps: they grow out of their icons (see
  * [CarPlayApps]) over Home, which falls back a little as it fades. Out of them: they
- * shrink back into their icons over Home coming forward. Home to one of its own pages
- * (Settings, all three screens) opens out of Home, and back. Screen mode crossfades.
+ * shrink back into their icons over Home coming forward; Settings, one of Home's apps,
+ * the same. Home to all three screens opens out of Home, and back. Screen mode crossfades.
  */
 internal fun AnimatedContentTransitionScope<Pair<Tab, Boolean>>.tabMotion(carPlay: Boolean): ContentTransform {
     val fade = ContentTransform(fadeIn(tween(220)), fadeOut(tween(220)), sizeTransform = null)
     if (!carPlay) return fade
     val (from, fromApps) = initialState
     val (to, toApps) = targetState
-    val intoApps = to == Tab.SCREENS && toApps
-    val outOfApps = from == Tab.SCREENS && fromApps
+    // Settings is one of Home's apps in CarPlay mode: it opens and closes as they do.
+    val intoApps = (to == Tab.SCREENS && toApps) || to == Tab.SETTINGS
+    val outOfApps = (from == Tab.SCREENS && fromApps) || from == Tab.SETTINGS
     return when {
         intoApps -> ContentTransform(
             EnterTransition.None,

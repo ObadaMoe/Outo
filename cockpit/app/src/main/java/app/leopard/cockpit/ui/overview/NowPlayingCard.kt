@@ -1,7 +1,25 @@
 package app.leopard.cockpit.ui.overview
 
 import android.os.SystemClock
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import app.leopard.cockpit.ui.carplay.Origin
+import app.leopard.cockpit.ui.carplay.cover
+import app.leopard.cockpit.ui.screens.HostSurface
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -65,9 +83,27 @@ import app.leopard.cockpit.ui.theme.T
 import kotlinx.coroutines.delay
 
 /**
+ * The card shows the video itself, not the song (see [NowPlayingCard]). Kept while Outo
+ * runs, so the card comes back to it.
+ */
+private val videoShown = MutableStateFlow(false)
+
+/**
+ * The video in the card: the app on a landscape display the size of a phone's, where a
+ * video app's player fills its screen, with none of the app around it.
+ */
+private const val VIDEO_W = 960
+private const val VIDEO_H = 540
+private const val VIDEO_DPI = VIDEO_H * 160 / 400
+
+/**
  * What's playing, as on CarPlay's dashboard: the artwork, the song and artist, how
  * far in, and play/pause with skip. The card takes the artwork's colour. Tap the
  * artwork or the song to open the app. One row tall it keeps to a single line.
+ *
+ * A video (YouTube, say): a button at the top right turns the card to the video itself,
+ * with its own buttons (back, play/pause, next, stop), one to turn it back to the song,
+ * and one to open the app full. One row tall, that button opens the app.
  */
 @Composable
 fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
@@ -75,7 +111,6 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
     val nav = LocalNav.current
     val t = LocalTokens.current
     val track by NowPlaying.track.collectAsState()
-    val listening by Directions.listening.collectAsState()
     val apps by otility.catalog.apps.collectAsState()
     // The last song stays on the card a little while after the app drops it: the
     // board keeps the card that long in case another song comes (some apps clear
@@ -95,14 +130,58 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
         if (tr != null) otility.screens.tap(AppId(tr.pkg), ScreenId.MAIN) { nav.openScreens(it) }
     }
     val shape = rounded(28.dp)
-    // A video (YouTube, say): a button to go and see it, full screen on the main screen.
-    val watch: (() -> Unit)? = tr?.takeIf { it.video }?.let { v -> { nav.openZoomed(AppId(v.pkg)) } }
+    val density = LocalDensity.current
+    var cardAt by remember { mutableStateOf(Rect.Zero) }
+    val state by otility.screens.state.collectAsState()
+    val pip by otility.screens.pip.collectAsState()
+    // The app full on the main screen, growing out of this card.
+    val expand: () -> Unit = {
+        if (tr != null) {
+            val app = AppId(tr.pkg)
+            nav.openZoomed(app)
+            if (cardAt.width > 0f) nav.launchOrigins[app] = Origin(cardAt, with(density) { 28.dp.toPx() }, Origin.Kind.CARD)
+        }
+    }
+    val showVideo by videoShown.collectAsState()
+    // Not while it's on another screen or floating: the card would take its picture.
+    val videoHere = tr?.video == true && pip?.pkg != tr.pkg &&
+        state.screenOf(AppId(tr.pkg)).let { it == null || it == ScreenId.MAIN }
 
     BoxWithConstraints(
         modifier
+            .onGloballyPositioned { cardAt = it.boundsInRoot() }
             .glass(shape, GlassKind.Widget, tint = lerp(t.card, accent.copy(alpha = t.card.alpha), 0.32f))
             .clip(shape),
     ) {
+        val slim = slot.size.h == 1
+        // A video: the button turns the card to it (one row tall, there's no room: the app opens).
+        val watch: (() -> Unit)? = if (tr?.video == true) ({ if (slim || !videoHere) expand() else videoShown.value = true }) else null
+        val video = showVideo && videoHere && !slim && tr != null
+        AnimatedContent(
+            video,
+            transitionSpec = {
+                ContentTransform(
+                    fadeIn(tween(260)) + scaleIn(tween(320), initialScale = 0.97f),
+                    fadeOut(tween(200)),
+                    sizeTransform = null,
+                )
+            },
+            label = "nowPlayingView",
+        ) { v ->
+            if (v && tr != null) VideoView(tr, info, accent, onSong = { videoShown.value = false }, onExpand = expand)
+            else Box(Modifier.fillMaxSize()) { SongView(tr, info, accent, slim, watch, open) }
+        }
+    }
+}
+
+/** The song: the artwork, the names and the player, laid out for the card's size. */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.SongView(
+    tr: Track?, info: AppInfo?, accent: Color, slim: Boolean, watch: (() -> Unit)?, open: () -> Unit,
+) {
+    val t = LocalTokens.current
+    val listening by Directions.listening.collectAsState()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         // A soft wash of the artwork's colour from behind it.
         Box(
             Modifier.fillMaxSize().background(
@@ -113,7 +192,6 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
                 ),
             ),
         )
-        val slim = slot.size.h == 1
         val wide = maxWidth >= 560.dp
         val bigArt = maxHeight - 40.dp
         // Narrow: the artwork grows into whatever the player below leaves, up to about
@@ -143,7 +221,7 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
                 PlayButton(tr, 52.dp)
                 MediaButton(Icons.next, 46.dp, tr?.canNext == true) { NowPlaying.next() }
                 // One row: the video button with the others, not over the name.
-                if (watch != null) MediaButton(Icons.video, 46.dp, true, watch)
+                if (watch != null) MediaButton(Icons.video, 46.dp, true, onClick = watch)
             }
             wide -> Row(Modifier.fillMaxSize().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Artwork(tr, accent, bigArt, Modifier.pressable(open))
@@ -171,6 +249,106 @@ fun NowPlayingCard(slot: WidgetSlot, modifier: Modifier) {
         }
     }
 }
+
+/**
+ * The video itself, filling the card. Its buttons show over it on a tap and go a few
+ * seconds after, while it plays: back, play/pause, next and stop along the bottom; at
+ * the top right, back to the song and the app full.
+ */
+@Composable
+private fun VideoView(tr: Track, info: AppInfo?, accent: Color, onSong: () -> Unit, onExpand: () -> Unit) {
+    val otility = Otility.instance
+    val app = AppId(tr.pkg)
+    var controls by remember { mutableStateOf(true) }
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(controls, touchedAt, tr.playing) {
+        if (controls && tr.playing) {
+            delay(4_000)
+            controls = false
+        }
+    }
+    val shown by animateFloatAsState(if (controls) 1f else 0f, tween(if (controls) 160 else 320), label = "videoControls")
+    val touch = { touchedAt = SystemClock.uptimeMillis() }
+    // Gone from the card and on no screen: put away as an app left in the background is
+    // (closed a while later, unless it's still playing).
+    DisposableEffect(app) {
+        onDispose {
+            val s = otility.screens
+            if (s.state.value.screenOf(app) == null && s.pip.value != app) s.hosts.park(app)
+        }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures { controls = !controls; touch() } },
+    ) {
+        // Until the video's first picture: its artwork, dimmed, as a poster.
+        Artwork(tr, accent, 0.dp, Modifier.fillMaxSize().graphicsLayer { alpha = 0.5f }, fill = true)
+        HostSurface(
+            app, info?.component?.flattenToShortString() ?: app.pkg, VIDEO_W, VIDEO_H,
+            Modifier.fillMaxSize().cover(VIDEO_W, VIDEO_H), dpi = VIDEO_DPI,
+        )
+        // Paused, the app draws its own controls over the picture: the poster covers them,
+        // until a moment after it plays again (by when the app has put them away).
+        var covered by remember { mutableStateOf(!tr.playing) }
+        LaunchedEffect(tr.playing) {
+            if (tr.playing) {
+                delay(UNCOVER_MS)
+                covered = false
+            } else covered = true
+        }
+        val cover by animateFloatAsState(if (covered) 1f else 0f, tween(if (covered) 200 else 450), label = "videoCover")
+        if (cover > 0.01f) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = cover }.background(Color.Black)) {
+                Artwork(tr, accent, 0.dp, Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f }, fill = true)
+            }
+        }
+        if (shown > 0.01f) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = shown }) {
+                // Shades at the top and bottom, so the buttons read on any picture.
+                Box(
+                    Modifier.fillMaxWidth().height(96.dp).align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))),
+                )
+                Box(
+                    Modifier.fillMaxWidth().height(130.dp).align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))),
+                )
+                Row(
+                    Modifier.align(Alignment.TopStart).fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (info != null) {
+                        AppIcon(info, 22.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Txt(tr.title ?: info?.label.orEmpty(), T.subhead.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), Color.White, maxLines = 1, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    // Back to the song, and the app full.
+                    GlassIconButton(Icons.music, { touch(); onSong() }, size = 40.dp)
+                    Spacer(Modifier.width(8.dp))
+                    GlassIconButton(Icons.expand, { touch(); onExpand() }, size = 40.dp)
+                }
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
+                    if (tr.durationMs != null) Progress(tr, showTimes = false, tint = Color.White)
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        MediaButton(Icons.previous, 46.dp, tr.canPrevious, Color.White) { touch(); NowPlaying.previous() }
+                        Spacer(Modifier.width(14.dp))
+                        MediaButton(if (tr.playing) Icons.pause else Icons.play, 54.dp, true, Color.White) { touch(); NowPlaying.playPause() }
+                        Spacer(Modifier.width(14.dp))
+                        MediaButton(Icons.next, 46.dp, tr.canNext, Color.White) { touch(); NowPlaying.next() }
+                        Spacer(Modifier.width(14.dp))
+                        MediaButton(Icons.stop, 46.dp, true, Color.White) { touch(); NowPlaying.stopPlaying() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** How long after playing again the poster stays over the video (the app's controls are going). */
+private const val UNCOVER_MS = 2_500L
 
 /** Room the video button takes at the card's top right, kept clear of the names. */
 private val WatchRoom = 52.dp
@@ -215,18 +393,19 @@ private fun PlayButton(tr: Track?, size: Dp) {
 }
 
 @Composable
-private fun MediaButton(icon: ImageVector, size: Dp, enabled: Boolean, onClick: () -> Unit) {
+private fun MediaButton(icon: ImageVector, size: Dp, enabled: Boolean, tint: Color? = null, onClick: () -> Unit) {
     val t = LocalTokens.current
     Box(
         Modifier.size(size).clip(Capsule).pressable(onClick, enabled = enabled, scaleDown = 0.86f).alpha(if (enabled) 1f else 0.35f),
         contentAlignment = Alignment.Center,
-    ) { Glyph(icon, t.text, size = size * 0.52f) }
+    ) { Glyph(icon, tint ?: t.text, size = size * 0.52f) }
 }
 
 /** The song's progress bar, with the time gone and left; moves on by itself while playing. */
 @Composable
-private fun Progress(tr: Track, showTimes: Boolean) {
+private fun Progress(tr: Track, showTimes: Boolean, tint: Color? = null) {
     val t = LocalTokens.current
+    val ink = tint ?: t.text
     val duration = tr.durationMs ?: return
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(tr.playing, tr.at, tr.positionMs) {
@@ -238,8 +417,8 @@ private fun Progress(tr: Track, showTimes: Boolean) {
     }
     val pos = tr.positionAt(now)
     Column {
-        Box(Modifier.fillMaxWidth().height(4.dp).background(t.text.copy(alpha = 0.16f), Capsule)) {
-            Box(Modifier.fillMaxWidth((pos.toFloat() / duration).coerceIn(0f, 1f)).fillMaxHeight().background(t.text.copy(alpha = 0.85f), Capsule))
+        Box(Modifier.fillMaxWidth().height(4.dp).background(ink.copy(alpha = 0.2f), Capsule)) {
+            Box(Modifier.fillMaxWidth((pos.toFloat() / duration).coerceIn(0f, 1f)).fillMaxHeight().background(ink.copy(alpha = 0.9f), Capsule))
         }
         if (showTimes) {
             Spacer(Modifier.height(4.dp))
@@ -254,17 +433,16 @@ private fun Progress(tr: Track, showTimes: Boolean) {
 
 /** The artwork, or a note on the artwork's colour when the app gives none. */
 @Composable
-private fun Artwork(tr: Track?, accent: Color, size: Dp, modifier: Modifier = Modifier) {
+private fun Artwork(tr: Track?, accent: Color, size: Dp, modifier: Modifier = Modifier, fill: Boolean = false) {
     val art = remember(tr?.art) { tr?.art?.asImageBitmap() }
     Box(
         modifier
-            .size(size)
-            .clip(rounded(size * 0.14f))
+            .then(if (fill) Modifier else Modifier.size(size).clip(rounded(size * 0.14f)))
             .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.95f), lerp(accent, Color.Black, 0.45f)))),
         contentAlignment = Alignment.Center,
     ) {
         if (art != null) Image(art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Glyph(Icons.music, Color.White.copy(alpha = 0.85f), size = size * 0.4f)
+        else Glyph(Icons.music, Color.White.copy(alpha = 0.85f), size = if (fill) 48.dp else size * 0.4f)
     }
 }
 

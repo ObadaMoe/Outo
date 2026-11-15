@@ -70,6 +70,7 @@ import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.ui.carplay.AppSwitcherHost
 import app.leopard.cockpit.ui.carplay.CarPlayApps
 import app.leopard.cockpit.ui.carplay.CarPlayHome
+import app.leopard.cockpit.ui.carplay.CarPlaySettings
 import app.leopard.cockpit.screens.AppId
 import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.ui.apps.AppsTab
@@ -154,6 +155,10 @@ class Nav(start: Tab) {
     var allScreens by mutableStateOf(false)
     /** The page CarPlay's Home was on, for when it opens again (Home tapped there goes to the first). */
     var homePage = 0
+    /** CarPlay mode: Settings' tile tapped, which its window grows out of (see CarPlaySettings). */
+    internal var settingsOrigin: Origin? = null
+    /** CarPlay mode: Settings' tile on Home, in the window's pixels: its window shrinks back into it. */
+    var settingsTile = Rect.Zero
     fun openScreens(zoom: ScreenId? = null) {
         tab = Tab.SCREENS
         zoomRequest = zoom
@@ -267,6 +272,14 @@ fun OtilityApp(app: Otility) {
                         }
                         else if (tab == Tab.SCREENS) ScreensTab()
                         else if (tab == Tab.OVERVIEW && carPlay) CarPlayHome()
+                        else if (tab == Tab.SETTINGS && carPlay) {
+                            // One of Home's apps: it grows out of its tile, and back into it.
+                            val grown by transition.animateFloat(
+                                { if (targetState == EnterExitState.Visible) Motion.grow() else Motion.shrink() },
+                                label = "settings",
+                            ) { if (it == EnterExitState.Visible) 1f else 0f }
+                            CarPlaySettings(grown = { grown }, leaving = transition.targetState == EnterExitState.PostExit)
+                        }
                         else Box(Modifier.fillMaxSize().windowInsetsPadding(CarBars)) {
                             when (tab) {
                                 Tab.OVERVIEW -> OverviewTab()
@@ -316,9 +329,14 @@ fun OtilityApp(app: Otility) {
                             Modifier.align(Alignment.TopCenter).padding(start = SideInset, top = 14.dp)
                                 .windowInsetsPadding(WindowInsets.safeDrawing),
                         )
+                        // An iPhone notification, from the top, beside the sidebar.
+                        NoteBanner(
+                            Modifier.align(Alignment.TopCenter).padding(start = SideInset + 16.dp, end = 16.dp, top = 12.dp)
+                                .windowInsetsPadding(WindowInsets.safeDrawing),
+                        )
                         // A closed app, for a moment: Undo opens it again.
                         UndoCloseNote(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).windowInsetsPadding(WindowInsets.safeDrawing))
-                        // CarPlay mode: three fingers up, the apps and splits used lately.
+                        // CarPlay mode: two fingers up, the apps and splits used lately.
                         AppSwitcherHost()
                         // Menus are placed in the window's pixels; this layer starts below the car's status bar.
                         val menu = nav.menu

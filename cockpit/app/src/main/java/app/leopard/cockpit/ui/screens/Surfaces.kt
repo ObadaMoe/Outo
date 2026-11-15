@@ -62,10 +62,12 @@ fun HostSurface(
     app: AppId, component: String, width: Int, height: Int, modifier: Modifier = Modifier,
     direct: Boolean = false,
     picture: HostPicture? = null,
+    /** The density the app runs at, if not the car's (or its Phone view's). */
+    dpi: Int? = null,
 ) {
     // A view per app: its listener belongs to one app. Without this, the floating
     // window (or the map widget) changing app would keep showing the old one.
-    key(app) { HostView(app, component, width, height, modifier, direct, picture) }
+    key(app) { HostView(app, component, width, height, modifier, direct, picture, dpi) }
 }
 
 /**
@@ -86,11 +88,11 @@ class HostPicture {
  * while no glass blurs it: zoomed in on it, say, or on the still dashboard.
  */
 @Composable
-private fun HostView(app: AppId, component: String, width: Int, height: Int, modifier: Modifier, direct: Boolean, picture: HostPicture?) {
+private fun HostView(app: AppId, component: String, width: Int, height: Int, modifier: Modifier, direct: Boolean, picture: HostPicture?, dpiAsked: Int?) {
     val hosts = Otility.instance.screens.hosts
     val w = width.coerceAtLeast(2) and 1.inv()
     val h = height.coerceAtLeast(2) and 1.inv()
-    val dpi = hostDpi(app, w, h)
+    val dpi = hostDpi(app, w, h).let { dpiAsked ?: it }
     val feed = remember { HostFeed(app, hosts) }
     feed.picture = picture
     feed.component = component

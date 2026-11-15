@@ -117,7 +117,7 @@ private class Win(val app: AppId, rect: Rect, var origin: Origin, grown: Float, 
  * the icon tapped (or its card in the app switcher); on Home it shrinks back into its
  * sidebar icon (or the dashboard's map). Drag the handle between two to resize them;
  * past an edge, the other one fills the space and the squeezed one goes to the
- * background. Home (or Back) sends them all there, to the app switcher (three fingers
+ * background. Home (or Back) sends them all there, to the app switcher (two fingers
  * up). A finger in from the left edge of the windows is Back, inside the app.
  *
  * [presence]: 1 while shown, down to 0 on the way out ([leaving]), as the windows
@@ -368,7 +368,7 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
                 TouchRouter(otility.bridge, density.density, onTwoUp = {}, onTwoDown = {}, onTwoSide = {}, onTouchedPane = {})
             }
             router.gestures = settings.gestures
-            // Two fingers are the app's here (a map's tilt, say); three up are the switcher's.
+            // Two fingers are the app's here (a map's zoom, say), except two straight up: the switcher's.
             router.twoFingers = false
             router.targets = content.apps.mapNotNull { id ->
                 val r = targets[id] ?: return@mapNotNull null

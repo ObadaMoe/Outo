@@ -139,6 +139,11 @@ object NowPlaying {
         current?.transportControls?.skipToPrevious()
     }
 
+    /** Stops the app playing (not this watcher: that's [stop]). */
+    fun stopPlaying() {
+        current?.transportControls?.stop()
+    }
+
     private fun watch(list: List<MediaController>) {
         controllers.forEach { runCatching { it.unregisterCallback(callback) } }
         val own = context?.packageName

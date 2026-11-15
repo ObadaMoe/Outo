@@ -1,5 +1,8 @@
 package app.leopard.cockpit
 
+import app.leopard.cockpit.notes.AncsLink
+import app.leopard.cockpit.notes.TestNotes
+
 import android.app.Application
 import app.leopard.cockpit.car.CarBridge
 import app.leopard.cockpit.car.HelperConnection
@@ -49,6 +52,8 @@ class Otility : Application() {
     lateinit var assist: AssistLimit
     /** New versions of Outo from GitHub. */
     lateinit var updater: Updater
+    /** The iPhone's notifications, over Bluetooth (off until switched on). */
+    lateinit var notes: AncsLink
     val synth = EngineSynth()
     private val main = MainScope()
 
@@ -82,6 +87,11 @@ class Otility : Application() {
         }
         followSignals()
         updater = Updater(this, prefs, bridge, vehicle).also { it.start() }
+        notes = AncsLink(this)
+        main.launch {
+            prefs.settings.map { it.phoneNotes }.distinctUntilChanged().collect { on -> if (on) notes.start() else notes.stop() }
+        }
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) TestNotes.listen(this)
     }
 
     /**

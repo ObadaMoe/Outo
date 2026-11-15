@@ -15,6 +15,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class Appearance { LIGHT, DARK, AUTO }
+
+/** When an iPhone notification shows what it says, not only who it's from. */
+enum class NoteText { ALWAYS, PARKED, NEVER }
 enum class Accent { GLACIER, DUNE, JADE }
 enum class Tab { OVERVIEW, SCREENS, APPS, SETTINGS }
 
@@ -57,6 +60,9 @@ data class Settings(
     val mapOnCluster: Boolean = false,
     /** With the map on the cluster: BYD's own view while a turn signal is on, for its blind-spot camera. */
     val signalView: Boolean = true,
+    /** The iPhone's notifications, over Bluetooth (see notes.AncsLink). */
+    val phoneNotes: Boolean = false,
+    val noteText: NoteText = NoteText.PARKED,
     // Navigation
     val phoneHandoff: Boolean = true,
     val navApp: String = "com.waze",
@@ -354,6 +360,7 @@ class Prefs(context: Context) {
         put("restoreLayout", s.restoreLayout); put("startWithCar", s.startWithCar); put("autoUpdate", s.autoUpdate); put("startTab", s.startTab.name)
         put("clusterCode", s.clusterCode); put("mapOnCluster", s.mapOnCluster); put("signalView", s.signalView)
         put("phoneHandoff", s.phoneHandoff); put("navApp", s.navApp)
+        put("phoneNotes", s.phoneNotes); put("noteText", s.noteText.name)
         put("navScreen", s.navScreen?.name ?: "AUTO"); put("showDirections", s.showDirections)
         put("readMapScreen", s.readMapScreen); put("hudTurns", s.hudTurns); put("hudSpeedLimit", s.hudSpeedLimit); put("assistLimit", s.assistLimit); put("clusterTurns", s.clusterTurns)
         put("soundOn", s.soundOn); put("soundCar", s.soundCar); put("soundMode", s.soundMode.name)
@@ -399,6 +406,8 @@ class Prefs(context: Context) {
                 (lastLayout()?.get(ScreenId.DRIVER) as? ScreenContent.Single)?.app?.pkg in MapScreens.PACKAGES,
             signalView = b("signalView", d.signalView),
             phoneHandoff = b("phoneHandoff", d.phoneHandoff),
+            phoneNotes = b("phoneNotes", d.phoneNotes),
+            noteText = runCatching { NoteText.valueOf(o.getString("noteText")) }.getOrDefault(d.noteText),
             navApp = o.optString("navApp", d.navApp),
             navScreen = runCatching { ScreenId.valueOf(o.getString("navScreen")) }.getOrNull(),
             showDirections = b("showDirections", d.showDirections),

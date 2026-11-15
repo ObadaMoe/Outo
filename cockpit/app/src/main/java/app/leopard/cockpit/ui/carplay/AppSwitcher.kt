@@ -76,7 +76,7 @@ import kotlin.math.abs
 /**
  * CarPlay mode's app switcher, like an iPad's: the main screen's apps lately, each
  * one app or two side by side, as cards. Tap one to have it back as it was; swipe one
- * up to close it. Opened with three fingers up, anywhere in Outo.
+ * up to close it. Opened with two fingers up, anywhere in Outo.
  */
 object AppSwitcher {
     private val _open = MutableStateFlow(false)
@@ -87,15 +87,19 @@ object AppSwitcher {
 }
 
 /**
- * Three fingers swiped up, seen before Outo's window hands the touch on (so over an app
- * too). Once it's the switcher's, the window gets a cancel ([cancel]), as when a system
- * gesture takes over, and nothing more of that touch.
+ * Two fingers swiped up together, seen before Outo's window hands the touch on (so over
+ * an app too). Once it's the switcher's, the window gets a cancel ([cancel]), as when a
+ * system gesture takes over, and nothing more of that touch. Both fingers have to go up
+ * and stay about as far apart as they started: two fingers spreading or pinching (a
+ * map's zoom) stay the app's.
  */
-class ThreeFingersUp(private val dp: Float, private val enabled: () -> Boolean, private val onSwipe: () -> Unit) {
+class TwoFingersUp(private val dp: Float, private val enabled: () -> Boolean, private val onSwipe: () -> Unit) {
     private var tracking = false
     private var taken = false
     private var x0 = 0f
     private var y0 = 0f
+    private var spread0 = 0f
+    private val down = FloatArray(2)
     private var t0 = 0L
 
     /** True: the event is the gesture's, and the window shouldn't have it. */
@@ -106,20 +110,26 @@ class ThreeFingersUp(private val dp: Float, private val enabled: () -> Boolean, 
                 taken = false
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                if (!taken && ev.pointerCount == 3 && enabled()) {
+                if (!taken && ev.pointerCount == 2 && enabled()) {
                     tracking = true
                     x0 = cx(ev); y0 = cy(ev); t0 = ev.eventTime
+                    spread0 = spread(ev)
+                    down[0] = ev.getY(0); down[1] = ev.getY(1)
                 } else {
                     tracking = false
                 }
             }
             MotionEvent.ACTION_POINTER_UP -> tracking = false
-            MotionEvent.ACTION_MOVE -> if (tracking && ev.pointerCount == 3) {
+            MotionEvent.ACTION_MOVE -> if (tracking && ev.pointerCount == 2) {
                 val dx = cx(ev) - x0
                 val dy = cy(ev) - y0
+                val far = FAR_DP * dp
+                // Each finger on its way up, not one still while the other moves.
+                val both = ev.getY(0) - down[0] < -far * 0.5f && ev.getY(1) - down[1] < -far * 0.5f
+                val pinch = abs(spread(ev) - spread0) > -dy * 0.6f
                 if (ev.eventTime - t0 > MAX_MS) {
                     tracking = false
-                } else if (-dy > FAR_DP * dp && -dy > abs(dx) * 1.3f) {
+                } else if (-dy > far && -dy > abs(dx) * 1.3f && both && !pinch) {
                     tracking = false
                     taken = true
                     val c = MotionEvent.obtain(ev)
@@ -142,6 +152,7 @@ class ThreeFingersUp(private val dp: Float, private val enabled: () -> Boolean, 
 
     private fun cx(ev: MotionEvent): Float { var s = 0f; for (i in 0 until ev.pointerCount) s += ev.getX(i); return s / ev.pointerCount }
     private fun cy(ev: MotionEvent): Float { var s = 0f; for (i in 0 until ev.pointerCount) s += ev.getY(i); return s / ev.pointerCount }
+    private fun spread(ev: MotionEvent): Float = kotlin.math.hypot(ev.getX(1) - ev.getX(0), ev.getY(1) - ev.getY(0))
 
     private companion object {
         /** How far up, in dp, and within how long. */

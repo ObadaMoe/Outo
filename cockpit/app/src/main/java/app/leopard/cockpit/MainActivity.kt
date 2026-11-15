@@ -19,7 +19,7 @@ import app.leopard.cockpit.car.HelperLauncher
 import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.ui.OtilityApp
 import app.leopard.cockpit.ui.carplay.AppSwitcher
-import app.leopard.cockpit.ui.carplay.ThreeFingersUp
+import app.leopard.cockpit.ui.carplay.TwoFingersUp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -44,9 +44,9 @@ class MainActivity : ComponentActivity() {
         setContent { OtilityApp(app) }
     }
 
-    /** CarPlay mode: three fingers up anywhere open the app switcher. */
-    private val threeUp by lazy {
-        ThreeFingersUp(
+    /** CarPlay mode: two fingers up anywhere open the app switcher. */
+    private val twoUp by lazy {
+        TwoFingersUp(
             resources.displayMetrics.density,
             enabled = { (application as Otility).prefs.settings.value.let { it.mode == UiMode.CARPLAY && it.gestures } },
             onSwipe = AppSwitcher::show,
@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (threeUp.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
+        if (twoUp.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
         return super.dispatchTouchEvent(ev)
     }
 

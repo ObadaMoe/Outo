@@ -1,5 +1,10 @@
 package app.leopard.cockpit.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import app.leopard.cockpit.data.NoteText
+import app.leopard.cockpit.notes.AncsLink
+import app.leopard.cockpit.notes.PhoneNotes
 import androidx.compose.runtime.getValue
 import app.leopard.cockpit.ui.raisedCard
 import app.leopard.cockpit.ui.LocalRaisedGroups
@@ -49,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import app.leopard.cockpit.Otility
 import app.leopard.cockpit.R
 import app.leopard.cockpit.car.HelperConnection
@@ -120,11 +126,9 @@ enum class SettingsPage(val title: String, val icon: ImageVector, val color: Col
  */
 @Composable
 fun SettingsTab() {
-    val nav = LocalNav.current
-    val t = LocalTokens.current
     val panel = rounded(SidebarCorner)
     CabinBackground {
-        Row(
+        SettingsPanel(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
@@ -132,14 +136,28 @@ fun SettingsTab() {
                 .padding(start = SideInset, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin)
                 .glass(panel, GlassKind.Card)
                 .clip(panel),
-        ) {
+        )
+    }
+}
+
+/**
+ * What Settings shows, in a panel that [modifier] gives its place, background and
+ * [corner]: the pages on a card raised off its left side, the open page beside them.
+ * The Settings tab's in Screen mode; in CarPlay mode, Settings' window (see CarPlaySettings).
+ */
+@Composable
+fun SettingsPanel(modifier: Modifier, corner: Dp = SidebarCorner) {
+    val nav = LocalNav.current
+    val t = LocalTokens.current
+    run {
+        Row(modifier) {
             // ---- The pages: a card of their own, inset from the panel's edge and rounded with it ----
             Column(
                 Modifier
                     .padding(start = PagesInset, top = PagesInset, bottom = PagesInset)
                     .width(290.dp)
                     .fillMaxHeight()
-                    .raisedCard(rounded(SidebarCorner - PagesInset)),
+                    .raisedCard(rounded(corner - PagesInset)),
             ) {
                 Txt("Settings", T.largeTitle, modifier = Modifier.padding(start = 22.dp, top = 20.dp, bottom = 10.dp))
                 // As macOS's: search the settings by name; each match names its page.
@@ -279,7 +297,10 @@ private val SettingsPage.finds: List<String>
         )
         SettingsPage.STARTUP -> listOf("Start with the car", "Open on", "Restore the last layout", "Allow in the car's settings")
         SettingsPage.CONNECTION -> listOf("Helper", "Connect to the car", "Screens the car reports", "Apps on each display", "Car values")
-        SettingsPage.INTEGRATIONS -> listOf("Apps Outo knows best", "Your phone")
+        SettingsPage.INTEGRATIONS -> listOf(
+            "Apps Outo knows best", "Your phone", "iPhone notifications", "Show iPhone notifications",
+            "What they say", "When parked", "Clear notifications", "Bluetooth",
+        )
         SettingsPage.ABOUT -> listOf("Updates", "Check for updates automatically", "Check Now", "Version", "Open-source parts", "Car photos")
     }
 
@@ -324,8 +345,8 @@ private fun DisplayPage() {
     val t = LocalTokens.current
     Group(
         header = "Mode",
-        footer = if (s.mode == UiMode.CARPLAY) "Like CarPlay: Home has your apps on pages over the emblem, Settings among them. The sidebar keeps Home and your apps."
-        else "Home is the Overview, with its widgets and the map. Settings and Home stay on the sidebar.",
+        footer = if (s.mode == UiMode.CARPLAY) "Like CarPlay: Home is the map and Now Playing, then your apps on pages, Settings among them; swipe beside the map, or tap Home again. Apps open beside the sidebar; two fingers up show the ones used lately."
+        else "Home is the Overview, with its widgets and the map. The three screens, Settings and Home stay on the sidebar.",
     ) {
         Box(Modifier.padding(16.dp)) {
             Segmented(
@@ -398,11 +419,25 @@ private fun ScreensPage() {
             )
         }
         Separator()
-        Toggle("Gestures", s.gestures, "Two-finger swipes when zoomed in") { st, v -> st.copy(gestures = v) }
+        Toggle(
+            "Gestures", s.gestures,
+            if (s.mode == UiMode.CARPLAY) "Two fingers up for the app switcher" else "Two-finger swipes when zoomed in",
+        ) { st, v -> st.copy(gestures = v) }
         Separator()
         Toggle("Restore the last layout", s.restoreLayout, "When Outo starts") { st, v -> st.copy(restoreLayout = v) }
     }
-    Group(header = "Gestures when zoomed in") {
+    if (s.mode == UiMode.CARPLAY) Group(header = "Gestures") {
+        listOf(
+            "Two fingers up" to "The app switcher: the apps and splits used lately. Tap one to have it back, swipe one up to close it",
+            "Home" to "Leave the app or split; tapped again, the dashboard",
+            "Swipe in from the left edge" to "Back, inside the app",
+            "Drag the handle between two apps" to "Resize; past the edge, the other one fills the screen",
+        ).forEachIndexed { i, (g, what) ->
+            if (i > 0) Separator()
+            SettingRow(g, subtitle = what)
+        }
+    }
+    else Group(header = "Gestures when zoomed in") {
         listOf(
             "Two fingers up" to "Show the controls and the sidebar",
             "Two fingers down" to "Back to all three screens",
@@ -419,8 +454,11 @@ private fun ScreensPage() {
         header = "Sidebar and layouts",
         footer = "Hold an app and drag it onto the sidebar to keep it there. Hold one on the sidebar to remove it.",
     ) {
-        // Neither has a button on the sidebar: they open from here.
-        ActionRow("All apps") { nav.tab = Tab.APPS }
+        // Neither has a button on the sidebar in CarPlay mode: they open from here. CarPlay's
+        // apps are on Home's pages, after the dashboard.
+        ActionRow("All apps") {
+            if (s.mode == UiMode.CARPLAY) { nav.homePage = 1; nav.tab = Tab.OVERVIEW } else nav.tab = Tab.APPS
+        }
         Separator()
         ActionRow("All three screens") { nav.openAllScreens() }
         layouts.forEach { l ->
@@ -845,6 +883,81 @@ private fun IntegrationsPage() {
             Glyph(Icons.chevronRight, t.text2, size = 14.dp)
         }
     }
+    PhoneNotesGroup()
+}
+
+/**
+ * The iPhone's notifications on Outo, over Bluetooth (Apple's ANCS): the switch, how far
+ * along the link is, and how much of each one shows while driving.
+ */
+@Composable
+private fun PhoneNotesGroup() {
+    val app = Otility.instance
+    val t = LocalTokens.current
+    val s = settings()
+    val link by app.notes.state.collectAsState()
+    val notes by PhoneNotes.list.collectAsState()
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.notes.allowedNow() }
+    val car = link.carName ?: "the car"
+    Group(
+        header = "iPhone notifications",
+        footer = "Each new one comes in from the top, wherever you are in Outo, and waits on CarPlay Home. " +
+            "To connect: on the iPhone, Settings › Bluetooth, tap $car, then Pair, and allow notifications when it asks " +
+            "(or turn on Share System Notifications under $car's ⓘ there). No app is needed on the iPhone.",
+    ) {
+        SettingRow("Show iPhone notifications", subtitle = if (s.phoneNotes) linkLine(link, car) else "Off") {
+            Switch(s.phoneNotes, { on ->
+                update { it.copy(phoneNotes = on) }
+                if (on && !app.notes.allowed()) ask.launch(app.notes.permissions())
+            })
+        }
+        if (s.phoneNotes && link.stage == AncsLink.Stage.NEEDS_PERMISSION) {
+            Separator()
+            SettingRow("Outo needs Bluetooth permission", subtitle = "To announce itself to the iPhone and read its notifications.") {
+                GlassPillButton("Allow", { ask.launch(app.notes.permissions()) }, filled = true)
+            }
+        }
+        link.problem?.takeIf { s.phoneNotes }?.let {
+            Separator()
+            SettingRow(it) { Glyph(Icons.info, t.check, size = 18.dp) }
+        }
+        Separator()
+        Column(Modifier.padding(16.dp)) {
+            Txt("What they say", T.body)
+            Spacer(Modifier.height(10.dp))
+            Segmented(
+                listOf(NoteText.ALWAYS to "Always", NoteText.PARKED to "When parked", NoteText.NEVER to "Never"),
+                s.noteText, { v -> update { it.copy(noteText = v) } }, Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Txt(
+                when (s.noteText) {
+                    NoteText.ALWAYS -> "The message shows while driving too."
+                    NoteText.PARKED -> "While driving, only the app and who it's from; the message once parked, as CarPlay does."
+                    NoteText.NEVER -> "Only the app and who it's from."
+                },
+                T.footnote, t.text2,
+            )
+        }
+        if (notes.isNotEmpty()) {
+            Separator()
+            SettingRow("Clear notifications", subtitle = "${notes.size} on CarPlay Home · the iPhone keeps its own") {
+                GlassPillButton("Clear", { PhoneNotes.clear() })
+            }
+        }
+    }
+}
+
+/** Where the iPhone's link stands, in a line. */
+private fun linkLine(l: AncsLink.State, car: String): String = when (l.stage) {
+    AncsLink.Stage.OFF -> "Off"
+    AncsLink.Stage.NEEDS_PERMISSION -> "Needs Bluetooth permission"
+    AncsLink.Stage.NO_BLUETOOTH -> "Turn on the car's Bluetooth"
+    AncsLink.Stage.UNSUPPORTED -> "Not available in this car"
+    AncsLink.Stage.WAITING -> "Waiting for the iPhone · tap $car in its Bluetooth settings"
+    AncsLink.Stage.CONNECTING -> "Connecting to ${l.phone ?: "the iPhone"}…"
+    AncsLink.Stage.PAIRING -> "Pairing · tap Pair on ${l.phone ?: "the iPhone"}"
+    AncsLink.Stage.CONNECTED -> "Connected to ${l.phone ?: "the iPhone"}"
 }
 
 /** New versions from GitHub: the switch, what's on offer, and the button that installs it. */

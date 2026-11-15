@@ -198,12 +198,15 @@ fun Sidebar(modifier: Modifier = Modifier) {
         }
 
         // Home at the bottom, as CarPlay's, the space above left to the apps; in Screen
-        // mode Settings above it (a dot: a new version of Outo is ready). In CarPlay mode
-        // Settings is one of Home's apps. All apps and the three screens open from Settings.
+        // mode the three screens and Settings above it (a dot: a new version of Outo is
+        // ready). In CarPlay mode Settings is one of Home's apps, and the three screens
+        // open from Settings.
         val mode by remember { app.prefs.settings.map { it.mode }.distinctUntilChanged() }
             .collectAsState(app.prefs.settings.value.mode)
         if (mode == UiMode.SCREEN) {
             val update by Otility.instance.updater.state.collectAsState()
+            TabButton(Tab.SCREENS, Icons.screens)
+            Spacer(Modifier.height(4.dp))
             TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
             Spacer(Modifier.height(4.dp))
         }

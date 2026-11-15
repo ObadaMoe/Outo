@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalDensity
 import app.leopard.cockpit.data.WidgetKind
 import app.leopard.cockpit.data.WidgetSize
@@ -29,6 +30,9 @@ import app.leopard.cockpit.data.WidgetSlot
 import app.leopard.cockpit.ui.LocalBackdrop
 import app.leopard.cockpit.ui.overview.MapWidget
 import app.leopard.cockpit.ui.overview.NavigationCard
+import app.leopard.cockpit.notes.PhoneNotes
+import app.leopard.cockpit.ui.NotificationsCard
+import androidx.compose.animation.Crossfade
 import app.leopard.cockpit.ui.overview.NowPlayingCard
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -130,8 +134,8 @@ private val NavSlot = WidgetSlot(WidgetKind.NAVIGATION, WidgetSize(3, 2))
  * is CarPlay's dashboard: the map app, live, down the left (pan and zoom it where it
  * is, tap it twice to open it up), Now Playing and Navigation beside it. Then every
  * app, on pages that turn with a swipe (on the map a swipe pans it; swipe beside it),
- * Settings first among them. Always dark, as CarPlay's is. Home on the sidebar,
- * tapped again here, goes back to the dashboard.
+ * Settings first among them. Always dark, as CarPlay's is. Home on the sidebar, tapped
+ * again here, goes from the dashboard to the apps and back, as CarPlay's does.
  *
  * While the dashboard is on the screen the map is here, all of it, and the driver
  * cluster shows BYD's own view; turned to the apps (or anywhere else), the cluster
@@ -196,9 +200,15 @@ private fun Pages(items: List<HomeItem>) {
         val pager = rememberPagerState(initialPage = nav.homePage.coerceIn(0, appPages.size)) { 1 + appPages.size }
         LaunchedEffect(pager) { snapshotFlow { pager.currentPage }.collect { nav.homePage = it } }
         val scope = rememberCoroutineScope()
-        // Home tapped again, here: the dashboard, the pages gliding back.
+        // Home tapped again, here, as CarPlay's: from the dashboard to the apps, from the
+        // apps back to the dashboard, the pages gliding.
         DisposableEffect(nav, pager) {
-            val first: () -> Unit = { scope.launch { pager.animateScrollToPage(0, animationSpec = spring(0.92f, 220f)) } }
+            val first: () -> Unit = {
+                scope.launch {
+                    val to = if (pager.currentPage == 0 && pager.pageCount > 1) 1 else 0
+                    pager.animateScrollToPage(to, animationSpec = spring(0.92f, 220f))
+                }
+            }
             nav.home = first
             onDispose { if (nav.home === first) nav.home = null }
         }
@@ -212,32 +222,30 @@ private fun Pages(items: List<HomeItem>) {
                 if (page == 0) Dashboard()
                 else AppPage(appPages.getOrNull(page - 1).orEmpty(), cols, cellW, rows)
             }
-            PageDots(pager, t, Modifier.align(Alignment.BottomCenter).padding(start = ContentStart, end = SidebarMargin, bottom = SidebarMargin + 10.dp))
         }
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         DashboardMap(pager, w, h, inWindow, mapOpen)
+        // Over the map, which would hide them on the dashboard; going as it opens up.
+        PageDots(
+            pager, t,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = ContentStart, end = SidebarMargin, bottom = SidebarMargin + 10.dp)
+                .graphicsLayer { alpha = 1f - mapOpen.value.coerceIn(0f, 1f) },
+        )
     }
 }
 
 /**
- * Which page, as CarPlay's dots show it; the lit one slides along with the finger. Over
- * the apps they stay; over the dashboard, where they'd sit on the map, they show while
- * the pages turn and a moment after (on a dark pill there), then fade.
+ * Which page, as CarPlay's dots show it; the lit one slides along with the finger. Always
+ * there, so the apps' pages are found: over the dashboard on a dark pill, so they read on
+ * the map.
  */
 @Composable
 private fun PageDots(pager: PagerState, t: app.leopard.cockpit.ui.theme.Tokens, modifier: Modifier) {
-    var lately by remember { mutableStateOf(true) }
-    LaunchedEffect(pager.settledPage) {
-        lately = true
-        delay(1600)
-        lately = false
-    }
-    val show = pager.currentPage > 0 || pager.isScrollInProgress || lately
-    val shown by animateFloatAsState(if (show) 1f else 0f, tween(if (show) 160 else 480), label = "dots")
     Row(
         modifier
-            .graphicsLayer { alpha = shown }
             .drawBehind {
                 // Over the dashboard: a dark pill, so they read on the map.
                 val at = pager.currentPage + pager.currentPageOffsetFraction
@@ -325,7 +333,12 @@ private fun Dashboard() {
             Spacer(Modifier.width(mapW + WindowGap))
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(WindowGap)) {
                 NowPlayingCard(MediaSlot, Modifier.weight(1f).fillMaxWidth())
-                NavigationCard(NavSlot, Modifier.weight(1f).fillMaxWidth())
+                // The iPhone's notifications while there are some, as CarPlay's Dashboard has them.
+                val notes by PhoneNotes.list.collectAsState()
+                Crossfade(notes.isNotEmpty(), Modifier.weight(1f).fillMaxWidth(), tween(260), label = "notes") { some ->
+                    if (some) NotificationsCard(Modifier.fillMaxSize())
+                    else NavigationCard(NavSlot, Modifier.fillMaxSize())
+                }
             }
         }
     }
@@ -367,6 +380,8 @@ private fun SettingsTile(modifier: Modifier) {
     val open = {
         // The dot is a new version: Settings opens where it's installed.
         if (badge) nav.settingsPage = SettingsPage.ABOUT
+        // Its window grows out of this tile.
+        if (nav.settingsTile.width > 0f) nav.settingsOrigin = Origin.icon(nav.settingsTile)
         nav.tab = Tab.SETTINGS
     }
     val shape = rounded(IconSize * 0.225f)
@@ -375,9 +390,10 @@ private fun SettingsTile(modifier: Modifier) {
             Box(
                 Modifier
                     .size(IconSize)
+                    .onGloballyPositioned { nav.settingsTile = it.boundsInRoot() }
                     .shadow(IconSize * 0.12f, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
                     .clip(shape)
-                    .background(Brush.verticalGradient(listOf(Color(0xFF9A9AA0), Color(0xFF4A4A4F)))),
+                    .background(SettingsTileBrush),
                 contentAlignment = Alignment.Center,
             ) {
                 Glyph(Icons.gear, Color.White, size = IconSize * 0.64f)
