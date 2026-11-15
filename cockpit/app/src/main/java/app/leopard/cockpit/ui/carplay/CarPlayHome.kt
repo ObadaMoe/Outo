@@ -5,9 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.positionInRoot
 import app.leopard.cockpit.ui.SidebarMargin
 import kotlinx.coroutines.delay
@@ -117,8 +115,10 @@ private const val EMBLEM_ALPHA = 0.4f
 private val CellWidth = 176.dp
 private val CellHeight = 168.dp
 private val IconSize = 96.dp
-/** The page dots' room under the apps. */
-private val Dots = 40.dp
+/** The page dots' strip, under every page's content (the dashboard's too), as CarPlay's. */
+private val Dots = 34.dp
+/** The dots' own height (8 dp dots, 6 dp above and below). */
+private val DotsHeight = 20.dp
 /** Room right of the apps. */
 private val EndGap = 28.dp
 
@@ -226,12 +226,13 @@ private fun Pages(items: List<HomeItem>) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         DashboardMap(pager, w, h, inWindow, mapOpen)
-        // Over the map, which would hide them on the dashboard; going as it opens up.
+        // In their strip under the pages (the map and cards end above it); going as the
+        // map opens up over all of Home.
         PageDots(
             pager, t,
             Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = ContentStart, end = SidebarMargin, bottom = SidebarMargin + 10.dp)
+                .padding(start = ContentStart, end = SidebarMargin, bottom = SidebarMargin + (Dots - DotsHeight) / 2)
                 .graphicsLayer { alpha = 1f - mapOpen.value.coerceIn(0f, 1f) },
         )
     }
@@ -239,20 +240,12 @@ private fun Pages(items: List<HomeItem>) {
 
 /**
  * Which page, as CarPlay's dots show it; the lit one slides along with the finger. Always
- * there, so the apps' pages are found: over the dashboard on a dark pill, so they read on
- * the map.
+ * there, under the dashboard too, so the apps' pages are found.
  */
 @Composable
 private fun PageDots(pager: PagerState, t: app.leopard.cockpit.ui.theme.Tokens, modifier: Modifier) {
     Row(
-        modifier
-            .drawBehind {
-                // Over the dashboard: a dark pill, so they read on the map.
-                val at = pager.currentPage + pager.currentPageOffsetFraction
-                val a = (1f - at).coerceIn(0f, 1f) * 0.45f
-                if (a > 0f) drawRoundRect(Color.Black, alpha = a, cornerRadius = CornerRadius(size.height / 2f))
-            }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier.height(DotsHeight).padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         repeat(pager.pageCount) { i ->
@@ -296,12 +289,12 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
         return
     }
     val px = { d: androidx.compose.ui.unit.Dp -> with(density) { d.toPx() } }
-    // As tall as the sidebar, right of it (see Dashboard). From the layout, not from where
-    // it's drawn: Home zooming in or out mustn't resize the map app.
+    // Right of the sidebar, from its top to the dots' strip (see Dashboard). From the layout,
+    // not from where it's drawn: Home zooming in or out mustn't resize the map app.
     val margin = px(SidebarMargin)
     val mapW = (w - px(ContentStart) - margin - px(WindowGap)) * MAP_SHARE
     val left = px(ContentStart) - at * w
-    val pane = Rect(left, margin, left + mapW, h - margin)
+    val pane = Rect(left, margin, left + mapW, h - margin - px(Dots))
     // There, an app window of the map lands on it on the way back to Home.
     SideEffect {
         val o = inWindow[0]
@@ -322,12 +315,14 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
 }
 
 /**
- * The dashboard, as tall as the sidebar, its edges where an app's window has them: room
- * for the map down the left ([DashboardMap] draws it there), Now Playing and Navigation beside it.
+ * The dashboard, from the sidebar's top to the dots' strip, its sides where an app's window
+ * has them: room for the map down the left ([DashboardMap] draws it there), Now Playing and
+ * Navigation beside it. A swipe on the cards or between them turns the page; on the map it
+ * pans the map.
  */
 @Composable
 private fun Dashboard() {
-    BoxWithConstraints(Modifier.fillMaxSize().padding(start = ContentStart, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin)) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(start = ContentStart, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin + Dots)) {
         val mapW = (maxWidth - WindowGap) * MAP_SHARE
         Row(Modifier.fillMaxSize()) {
             Spacer(Modifier.width(mapW + WindowGap))
