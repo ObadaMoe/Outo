@@ -457,7 +457,7 @@ class ScreensController(
         val state = _state.value
         // CarPlay mode: no questions. The app comes up full size on the main screen (what was
         // there goes to the app switcher), the cluster's map too. Two side by side come from
-        // dragging one in from the sidebar, or three fingers sideways on the app (see CarPlayApps).
+        // dragging one in from the sidebar, or two fingers sideways on the app (see CarPlayApps).
         if (prefs.settings.value.mode == UiMode.CARPLAY) {
             if (_pip.value == app || state.screenOf(app) != ScreenId.MAIN) place(app, DropTarget(ScreenId.MAIN, Slot.FULL), confirm = false)
             show(ScreenId.MAIN)

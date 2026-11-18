@@ -213,10 +213,12 @@ class TouchRouter(
     /** Off: two fingers are the app's (CarPlay mode's apps, where only the edge's Back is Otility's). */
     var twoFingers: Boolean = true
     /**
-     * Three fingers left or right (-1, 1), with the app under them ([target]'s index), taken
-     * from the app; null: three fingers are the app's too.
+     * [sideFingers] fingers swiped left or right together (-1, 1), with the app under them
+     * ([target]'s index), taken from the app; null: they're the app's. Fingers spreading or
+     * pinching (a map's zoom) stay the app's.
      */
-    var onThreeSide: ((side: Int, pane: Int) -> Unit)? = null
+    var onSideSwipe: ((side: Int, pane: Int) -> Unit)? = null
+    var sideFingers = 2
     /** Pulls in from either edge, followed (see [EdgePull]); without it, only the left edge's Back. */
     var edgePull: EdgePull? = null
     /** The area's width: where its right edge is. */
@@ -269,7 +271,7 @@ class TouchRouter(
                 // A second finger ends a pull (and the touch stays Otility's).
                 if (pulling) { endPull(0f); return true }
                 flushEdge()
-                if (gestures && ((twoFingers && ev.pointerCount == 2) || (onThreeSide != null && ev.pointerCount == 3))) {
+                if (gestures && ((twoFingers && ev.pointerCount == 2) || (onSideSwipe != null && ev.pointerCount == sideFingers))) {
                     multi = ev.pointerCount
                     startX = cx(ev); startY = cy(ev); startSpan = span(ev)
                     startTime = ev.eventTime
@@ -312,14 +314,15 @@ class TouchRouter(
                     return true
                 }
                 if (ours) return true
-                val three = onThreeSide
-                if (multi == 3 && three != null && ev.pointerCount == 3 && ev.eventTime - startTime < 900) {
+                val sideSwipe = onSideSwipe
+                if (sideSwipe != null && multi == sideFingers && ev.pointerCount == multi && ev.eventTime - startTime < 900) {
                     val dx = cx(ev) - startX
                     val dy = cy(ev) - startY
-                    if (abs(dx) > 70 * dp && abs(dx) > abs(dy) * 1.4f) {
-                        takeOver(); three(if (dx < 0) -1 else 1, targets.indexOf(target)); return true
+                    if (abs(dx) > 70 * dp && abs(dx) > abs(dy) * 1.4f && abs(span(ev) - startSpan) < 60 * dp) {
+                        takeOver(); sideSwipe(if (dx < 0) -1 else 1, targets.indexOf(target)); return true
                     }
-                } else if (multi == 2 && ev.pointerCount == multi && ev.eventTime - startTime < 900) {
+                }
+                if (twoFingers && multi == 2 && ev.pointerCount == multi && ev.eventTime - startTime < 900) {
                     val dx = cx(ev) - startX
                     val dy = cy(ev) - startY
                     val spanChange = abs(span(ev) - startSpan)

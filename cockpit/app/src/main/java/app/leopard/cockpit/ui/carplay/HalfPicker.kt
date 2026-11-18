@@ -31,7 +31,7 @@ import app.leopard.cockpit.ui.pressable
 import app.leopard.cockpit.ui.theme.T
 
 /**
- * The other half, while an app has moved to one side (three fingers sideways): the
+ * The other half, while an app has moved to one side (two fingers sideways): the
  * apps to open next to it, the ones used lately first. Back puts the app full size again.
  */
 @Composable

@@ -205,11 +205,12 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         var dragRatio by remember { mutableStateOf<Float?>(null) }
         val split = content as? ScreenContent.Split
         val ratio = dragRatio ?: split?.ratio ?: 0.5f
-        // One app moved to a side by three fingers (-1 left, 1 right; null: full size), the
+        // One app moved to a side by two fingers (-1 left, 1 right; null: full size), the
         // other half picking what opens next to it. Gone once there are two, or none.
         var half by remember { mutableStateOf<Int?>(null) }
         val single = content as? ScreenContent.Single
-        LaunchedEffect(single?.app, leaving) { if (single == null || leaving) half = null }
+        // Another app opened (or none, or on the way out): full size again, no picker.
+        LaunchedEffect(single?.app, leaving) { half = null }
         val halfNow = half?.takeIf { single != null }
         fun hostSize(app: AppId): Pair<Int, Int> {
             if (halfNow != null) return ((area.width - gap) / 2f).toInt() to area.height.toInt()
@@ -227,6 +228,13 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         }
         val pickerPane = halfNow?.let { s -> panes(0.5f).let { (l, r) -> if (s < 0) r else l } }
         BackHandler(enabled = halfNow != null && !leaving) { half = null }
+        // And Back at the top of the sidebar, as for anything opened up over the apps.
+        val picking = halfNow != null && !leaving
+        DisposableEffect(picking) {
+            val close = { half = null }
+            if (picking) nav.back = close
+            onDispose { if (nav.back === close) nav.back = null }
+        }
 
         // An app from the sidebar let go over the apps: into the half it's over, next to
         // what's there (or in place of that half's app, of two).
@@ -412,9 +420,10 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
             // While the other half picks, touches go to the app's half only: the picker has its own.
             val touchArea = if (halfNow != null) targets.values.first() else area
             val apps = content.apps
-            // Three fingers sideways: one app moves to that side, the other half picking what
+            // Two fingers sideways together (not BYD's three, nor a pinch): one app moves to that side, the other half picking what
             // opens next to it; of two, the app under them changes sides.
-            router.onThreeSide = { side, pane ->
+            router.sideFingers = 2
+            router.onSideSwipe = { side, pane ->
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 when (val c = contentNow) {
                     is ScreenContent.Single -> half = side
