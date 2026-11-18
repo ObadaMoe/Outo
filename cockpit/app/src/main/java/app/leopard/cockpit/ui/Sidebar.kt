@@ -121,6 +121,11 @@ fun Sidebar(modifier: Modifier = Modifier) {
     val all by app.catalog.apps.collectAsState()
     val pinnedIds by app.prefs.dock.collectAsState()
     val state by app.screens.state.collectAsState()
+    val spaces by app.screens.spaces.collectAsState()
+    // A dot under each app that's open: on a screen, or (CarPlay mode) waiting in the app switcher.
+    val open = remember(state, spaces, nav.carPlay) {
+        state.running + if (nav.carPlay) spaces.flatMap { it.apps } else emptyList()
+    }
     val byId = remember(all) { all.associateBy { it.id } }
     val pinned = pinnedIds.mapNotNull { byId[it] }
     val recentIds by app.prefs.recents.collectAsState()
@@ -177,7 +182,7 @@ fun Sidebar(modifier: Modifier = Modifier) {
                         if (!moving) GapSlot(gapAt == i++)
                         PinnedApp(
                             a,
-                            running = a.id in state.running,
+                            running = a.id in open,
                             dim = moving || a.id == lifted,
                             // Over the sidebar, the place it's leaving closes up and a new one opens.
                             collapsed = moving && gapAt != null,
@@ -190,7 +195,7 @@ fun Sidebar(modifier: Modifier = Modifier) {
                     Box(Modifier.padding(bottom = RecentLine - 1.dp).width(26.dp).height(1.dp).background(t.sep))
                     recent.forEach { a ->
                         key("recent", a.id.pkg) {
-                            PinnedApp(a, running = a.id in state.running, dim = a.id == dragging || a.id == lifted, collapsed = false, pinned = false)
+                            PinnedApp(a, running = a.id in open, dim = a.id == dragging || a.id == lifted, collapsed = false, pinned = false)
                         }
                     }
                 }
