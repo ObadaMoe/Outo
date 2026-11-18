@@ -796,7 +796,7 @@ class ScreensController(
             var tick = 0
             while (isActive) {
                 if (bridge.connected) {
-                    val snap = withContext(bridge.scope.coroutineContext) { bridge.snapshot() }
+                    val snap = withContext(bridge.reads) { bridge.snapshot() }
                     if (snap != null) {
                         _snapshot.value = snap
                         if (System.currentTimeMillis() - lastLocalChange > 3000) adopt(snap, first)

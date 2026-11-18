@@ -1,8 +1,11 @@
 package app.leopard.cockpit.helper
 
 import android.content.AttributionSource
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Rect
 import android.hardware.display.VirtualDisplay
+import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
@@ -35,7 +38,7 @@ import java.util.concurrent.TimeUnit
  */
 object HelperMain {
     const val TAG = "OtilityHelper"
-    const val VERSION = 20
+    const val VERSION = 22
     const val APP_PACKAGE = "app.leopard.cockpit"
     const val AUTHORITY = "app.leopard.cockpit.helper"
     const val NICE_NAME = "otility_helper"
@@ -380,22 +383,28 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     private fun launchNow(pkg: String, displayId: Int): Int {
         val args = mutableListOf("am", "start-activity", "--display", displayId.toString(), "-f", "0x10200000")
+        val intent = Intent().addFlags(0x10200000) // NEW_TASK | RESET_TASK_IF_NEEDED
         if (pkg.contains('/')) {
             args += listOf("-n", pkg)
+            intent.component = ComponentName.unflattenFromString(pkg) ?: run {
+                Log.w(HelperMain.TAG, "launch: bad component $pkg")
+                return -1
+            }
         } else {
             args += listOf("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", pkg)
+            intent.setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(pkg)
         }
         val packageName = pkg.substringBefore('/')
         if (packageName == HelperMain.APP_PACKAGE) {
             // One of Otility's own windows for another screen (the cluster's map). Otility's
             // main window is its task too, and must stay where it is: nothing is moved.
-            exec(args)
+            start(intent, displayId, args, "launch $pkg")
             return -1
         }
         val before = mainTasks(packageName).map { it.taskId }.toSet()
         val otilityInFront = ownTask()?.visible == true
         launchedAt[packageName] = SystemClock.uptimeMillis()
-        exec(args)
+        if (!start(intent, displayId, args, "launch $pkg")) return -1
         val task = settle(packageName, displayId)
         watchHandover(packageName, displayId, before, otilityInFront)
         return task
@@ -414,13 +423,25 @@ internal class HelperService : IOtilityHelper.Stub() {
      * app had before the launch are left alone (one opened from the car's own home
      * screen, say).
      */
+    /** Each app's handover watch running now, by when it ends (one per app: they each took the window lock every 150 ms). */
+    private val handovers = ConcurrentHashMap<String, LongArray>()
+
     private fun watchHandover(packageName: String, displayId: Int, before: Set<Int>, otilityInFront: Boolean) {
         if (displayId == 0) return
+        // Long enough for a slow start on a busy car.
+        val until = SystemClock.uptimeMillis() + 15_000
+        val running = handovers[packageName]
+        if (running != null) {
+            // The one watching already looks a while longer instead of a second one starting.
+            running[0] = maxOf(running[0], until)
+            return
+        }
+        val deadline = longArrayOf(until)
+        handovers[packageName] = deadline
         Thread({
-            // Long enough for a slow start on a busy car.
-            val deadline = SystemClock.uptimeMillis() + 15_000
             val handled = HashSet<Int>()
-            while (SystemClock.uptimeMillis() < deadline) {
+            try {
+            while (SystemClock.uptimeMillis() < deadline[0]) {
                 SystemClock.sleep(150)
                 for (t in mainTasks(packageName)) {
                     if (t.taskId in before || t.taskId in handled || t.displayId == displayId) continue
@@ -429,6 +450,9 @@ internal class HelperService : IOtilityHelper.Stub() {
                     runCatching { keepingOtilityInFront(displayId, otilityInFront) { moveTaskNow(t.taskId, displayId) } }
                         .onFailure { Log.w(HelperMain.TAG, "handover", it) }
                 }
+            }
+            } finally {
+                handovers.remove(packageName, deadline)
             }
         }, "otility-handover").apply { isDaemon = true }.start()
     }
@@ -582,24 +606,64 @@ internal class HelperService : IOtilityHelper.Stub() {
     private fun settle(packageName: String, displayId: Int): Int {
         // Only the main user's copy: the passenger screen can run the same app as its
         // own user, and that one must stay where it is.
-        fun find() = Hidden.tasks().firstOrNull {
-            it.pkg == packageName && it.activityType == 1 && it.userId == Hidden.MAIN_USER
-        }
-        val deadline = SystemClock.uptimeMillis() + 4000
+        fun find() = runCatching {
+            Hidden.tasks().firstOrNull { it.pkg == packageName && it.activityType == 1 && it.userId == Hidden.MAIN_USER }
+        }.getOrNull()
+        // Android makes the task while the start call runs, so it's nearly always there
+        // on the first look; the rest is for a slow car.
+        val deadline = SystemClock.uptimeMillis() + SETTLE_MS
         while (SystemClock.uptimeMillis() < deadline) {
             val task = find()
             if (task != null) {
-                if (task.displayId != displayId) {
-                    SystemClock.sleep(400)
-                    val again = find() ?: task
-                    if (again.displayId != displayId) runCatching { Hidden.moveTask(again.taskId, displayId) }
-                    return again.taskId
+                if (task.displayId == displayId) return task.taskId
+                // Somewhere else: a moment for it to come over by itself, then moved.
+                val until = SystemClock.uptimeMillis() + SETTLE_ELSEWHERE_MS
+                var again: Hidden.TaskRow = task
+                while (SystemClock.uptimeMillis() < until) {
+                    SystemClock.sleep(SETTLE_STEP_MS)
+                    again = find() ?: again
+                    if (again.displayId == displayId) return again.taskId
                 }
-                return task.taskId
+                runCatching { Hidden.moveTask(again.taskId, displayId) }
+                return again.taskId
             }
-            SystemClock.sleep(150)
+            SystemClock.sleep(SETTLE_STEP_MS)
         }
         return -1
+    }
+
+    /** False once starting activities in this process failed for want of the call: `am` from then on. */
+    @Volatile private var startInProcess = true
+
+    /**
+     * Starts [intent] on [displayId] in this process, or, where that call isn't there
+     * (another Android) or Android refused it, with `am` and its [amArgs]. True if started.
+     */
+    private fun start(intent: Intent, displayId: Int, amArgs: List<String>, what: String): Boolean {
+        if (startInProcess) {
+            try {
+                val code = Hidden.startActivity(intent, displayId)
+                if (code >= 0) return true
+                // Android's own answer (no such activity, say): am would get the same.
+                Log.w(HelperMain.TAG, "$what: not started ($code)")
+                return false
+            } catch (t: java.lang.reflect.InvocationTargetException) {
+                // Android said no (a SecurityException, say). am runs as the shell too, but it's
+                // the way that always worked: tried before giving up.
+                Log.w(HelperMain.TAG, "$what: refused in-process, trying am", t.cause ?: t)
+            } catch (t: Throwable) {
+                startInProcess = false
+                Log.w(HelperMain.TAG, "starting activities in-process doesn't work here; using am from now on", t)
+            }
+        }
+        val out = exec(amArgs)
+        // am echoes the link back ("Starting: Intent { … dat=geo:…Error… }"), so only
+        // its own error lines count, not the word anywhere.
+        if (AM_FAILED.containsMatchIn(out)) {
+            Log.w(HelperMain.TAG, "$what: $out")
+            return false
+        }
+        return true
     }
 
     override fun moveTask(taskId: Int, displayId: Int): Boolean {
@@ -781,18 +845,20 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     override fun openUri(pkg: String, uris: Array<String>, displayId: Int): Boolean {
         check()
+        // A link is a launch too: Waze's own task moving to its display isn't a pop-up
+        // to put back (which pulled the map off the cluster and resized it twice).
+        val before = mainTasks(pkg).map { it.taskId }.toSet()
+        val otilityInFront = ownTask()?.visible == true
+        launchedAt[pkg] = SystemClock.uptimeMillis()
         for (uri in uris) {
-            val out = exec(listOf(
+            val args = listOf(
                 "am", "start-activity", "--display", displayId.toString(), "-f", "0x10000000",
                 "-a", "android.intent.action.VIEW", "-d", uri, "-p", pkg,
-            ))
-            // am echoes the link back ("Starting: Intent { … dat=geo:…Error… }"), so only
-            // its own error lines count, not the word anywhere.
-            if (AM_FAILED.containsMatchIn(out)) {
-                Log.w(HelperMain.TAG, "openUri $uri: $out")
-                continue
-            }
+            )
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(0x10000000).setPackage(pkg)
+            if (!start(intent, displayId, args, "openUri $uri")) continue
             settle(pkg, displayId)
+            watchHandover(pkg, displayId, before, otilityInFront)
             return true
         }
         return false
@@ -869,8 +935,8 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     override fun capture(displayId: Int, left: Int, top: Int, right: Int, bottom: Int, width: Int, height: Int): IntArray {
         check()
-        // Small pictures only: enough to read an arrow, not to film a screen.
-        require(width in 1..CAPTURE_MAX && height in 1..CAPTURE_MAX && right > left && bottom > top) { "bad capture" }
+        // Small pictures only: enough to read an arrow or a turn card, not to film a screen.
+        require(width in 1..CAPTURE_MAX && height in 1..CAPTURE_MAX && width * height <= CAPTURE_PIXELS && right > left && bottom > top) { "bad capture" }
         val d = Hidden.displayInfo(displayId)?.let(Hidden::pictureOf) ?: return IntArray(0)
         return runCatching { Hidden.capture(d, Rect(left, top, right, bottom), width, height) }
             .getOrElse { Log.w(HelperMain.TAG, "capture $displayId", it); IntArray(0) }
@@ -913,15 +979,21 @@ internal class HelperService : IOtilityHelper.Stub() {
 
     private companion object {
         const val EXEC_TIMEOUT_S = 10L
+        /** How long a launch waits for the app's task, how often it looks, and how long one elsewhere gets to come over. */
+        const val SETTLE_MS = 3000L
+        const val SETTLE_STEP_MS = 50L
+        const val SETTLE_ELSEWHERE_MS = 400L
         /** A package name, so nothing else reaches dumpsys's arguments. */
         val PACKAGE = Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")
         /** Installing a 20 MB update can take a while on a busy car. */
         const val INSTALL_TIMEOUT_S = 180L
         /** Where an update waits while it's installed (the shell can read it here; Outo's own files it can't). */
         const val UPDATE_FILE = "/data/local/tmp/outo-update.apk"
-        const val CAPTURE_MAX = 256
+        const val CAPTURE_MAX = 720
+        /** Enough to read the words on a map's turn card; small enough for one binder call. */
+        const val CAPTURE_PIXELS = 120_000
         /** How often the helper looks for apps' windows landing on the main screen, when Android doesn't say. */
-        const val POPUP_LOOK_MS = 300L
+        const val POPUP_LOOK_MS = 500L
         /** After Android says the tasks changed, a moment for the rest of the change to come in. */
         const val POPUP_SETTLE_MS = 12L
         /** After Otility starts an app, its own hand-over (a splash screen) isn't a pop-up. */

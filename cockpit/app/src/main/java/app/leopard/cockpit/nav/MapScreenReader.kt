@@ -114,6 +114,9 @@ class MapScreenReader : AccessibilityService() {
             .onFailure { Log.w(TAG, "read $pkg", it) }.getOrDefault(emptyList())
         val turn = runCatching { MapScreens.parse(pkg, nodes)?.let { withArrow(it, nodes) } }
             .onFailure { Log.w(TAG, "parse $pkg", it) }.getOrNull()
+            // Newer Waze hides its turn card from accessibility: read its picture instead.
+            ?: runCatching { if (nodes.none { it.id?.endsWith(":id/navBarDistance") == true }) picture.read(pkg, roots) else null }
+                .onFailure { Log.w(TAG, "picture $pkg", it) }.getOrNull()
         val now = SystemClock.uptimeMillis()
         if (turn != null) {
             lastFound = now
@@ -173,6 +176,8 @@ class MapScreenReader : AccessibilityService() {
         if (px == null || px.size < pw * ph) return Maneuver.UNKNOWN
         return ArrowReader.read(px, pw, ph)
     }
+
+    private val picture = WazePictureReader()
 
     private fun show(turn: NextTurn?) {
         if (turn == null && shown == null) return

@@ -549,17 +549,20 @@ private fun PageDots(pager: PagerState, t: app.leopard.cockpit.ui.theme.Tokens, 
 private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<Offset>, mapOpen: Animatable<Float, AnimationVector1D>) {
     val density = LocalDensity.current
     val nav = LocalNav.current
-    // Where the pages are, the dashboard at 0.
-    val at = pager.currentPage + pager.currentPageOffsetFraction
+    // Where the pages are, the dashboard at 0. Read while drawing only: a page turn
+    // moves the map without composing it (and its app's touch targets) again each frame.
+    val at = { pager.currentPage + pager.currentPageOffsetFraction }
     // Turning, the map slides under the sidebar, whose glass can't blur its picture
     // (it goes straight to the screen): the sidebar is nearly solid meanwhile (see Nav.direct).
-    val under = at > 0f && at < 1f
+    val under by remember(pager) { derivedStateOf { at().let { it > 0f && it < 1f } } }
+    val gone by remember(pager) { derivedStateOf { at() >= 1f } }
+    val still by remember(pager) { derivedStateOf { at() == 0f } }
     DisposableEffect(under) {
         if (under) nav.direct = true
         onDispose { if (under) nav.direct = false }
     }
     DisposableEffect(Unit) { onDispose { nav.dashboardMap = Rect.Zero } }
-    if (at >= 1f || w <= 0f || h <= 0f) {
+    if (gone || w <= 0f || h <= 0f) {
         SideEffect { nav.dashboardMap = Rect.Zero }
         return
     }
@@ -568,25 +571,27 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
     // not from where it's drawn: Home zooming in or out mustn't resize the map app.
     val margin = px(SidebarMargin)
     val mapW = (w - px(ContentStart) - margin - px(WindowGap)) * MAP_SHARE
-    val left = px(ContentStart) - at * w
+    val left = px(ContentStart)
     val pane = Rect(left, margin, left + mapW, h - margin - px(Dots))
     // There, an app window of the map lands on it on the way back to Home.
     SideEffect {
         val o = inWindow[0]
-        nav.dashboardMap = if (at == 0f && mapOpen.value == 0f) pane.translate(o.x, o.y) else Rect.Zero
+        nav.dashboardMap = if (still && mapOpen.value == 0f) pane.translate(o.x, o.y) else Rect.Zero
     }
-    MapWidget(
-        slot = MapSlot,
-        pane = pane,
-        // Opened up, all of Home beside the sidebar, as an app's window.
-        full = Rect(0f, 0f, w, h),
-        editing = false,
-        onEditing = {},
-        onMenu = { _, _ -> },
-        onRemove = {},
-        progress = mapOpen,
-        rail = ContentStart,
-    )
+    Box(Modifier.fillMaxSize().graphicsLayer { translationX = -at() * w }) {
+        MapWidget(
+            slot = MapSlot,
+            pane = pane,
+            // Opened up, all of Home beside the sidebar, as an app's window.
+            full = Rect(0f, 0f, w, h),
+            editing = false,
+            onEditing = {},
+            onMenu = { _, _ -> },
+            onRemove = {},
+            progress = mapOpen,
+            rail = ContentStart,
+        )
+    }
 }
 
 /**
@@ -1051,7 +1056,8 @@ private fun SettingsIcon(modifier: Modifier) {
     Box(
         modifier
             .size(IconSize)
-            .shadow(IconSize * 0.12f, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
+            // As AppIcon: not on CarPlay's black, where it can't be seen.
+            .then(if (!LocalTokens.current.dark) Modifier.shadow(IconSize * 0.12f, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f)) else Modifier)
             .clip(shape)
             .background(SettingsTileBrush),
         contentAlignment = Alignment.Center,

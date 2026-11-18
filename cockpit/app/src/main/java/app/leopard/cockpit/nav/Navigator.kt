@@ -83,6 +83,7 @@ class Navigator(
         private const val TAG = "Otility"
         /** How long the map reader may take to start before it's switched off and on. */
         private const val READER_START = 6_000L
+        private const val SAME_PLACE_MS = 5_000L
         /** How often the reader's connection is looked at, and the least time between restarts. */
         private const val READER_CHECK = 20_000L
         private const val READER_RETRY = 60_000L
@@ -198,6 +199,9 @@ class Navigator(
      * Opens [place] in the navigation app on [screen] (or the usual one) and
      * starts the route. Returns a sentence to show on the phone.
      */
+    private var lastUris: List<String> = emptyList()
+    private var lastAt = 0L
+
     fun go(place: Place, screen: ScreenId? = null): Result {
         val pkg = navApp() ?: return result(false, "There's no navigation app in the car.")
         prefs.addRecentPlace(place)
@@ -214,6 +218,13 @@ class Navigator(
             else -> screen?.takeIf { it != ScreenId.DRIVER } ?: targetScreen(pkg)
         }
         Log.i(TAG, "place for $pkg on $target: ${place.title}")
+        // The same place again within a few seconds (the phone sending twice, a double
+        // tap): the first is still opening; a second link would restart the route.
+        val now = android.os.SystemClock.uptimeMillis()
+        val same = uris.toList() == lastUris && now - lastAt < SAME_PLACE_MS && job?.isActive == true
+        lastUris = uris.toList()
+        lastAt = now
+        if (same) return result(true, "${place.title} is opening in $label.")
         job?.cancel()
 
         if (!bridge.connected) {
@@ -258,7 +269,8 @@ class Navigator(
                 result(false, "The ${target.label.lowercase()} screen isn't available right now.")
                 return@launch
             }
-            val ok = withContext(bridge.scope.coroutineContext) { bridge.openUri(pkg, uris, display) }
+            // On the bridge's lane, but still this job's: a newer place cancels it.
+            val ok = withContext(bridge.dispatcher) { bridge.openUri(pkg, uris, display) }
             result(ok, if (ok) "${place.title} is open in $label." else "$label couldn't open that place.")
         }
         val where = if (onCluster) "the driver cluster" else "the ${target.label.lowercase()} screen"

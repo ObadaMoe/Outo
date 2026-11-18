@@ -98,6 +98,14 @@ data class CarSnapshot(
 class CarBridge {
     private val lane = Dispatchers.IO.limitedParallelism(1)
     val scope = CoroutineScope(SupervisorJob() + lane + CrashLog.survive)
+    /**
+     * A second lane, for looking only (the car's state every 2 s): it never waits behind
+     * a launch on [lane], and the displays' calls never wait behind it. The helper
+     * answers each call on its own binder thread.
+     */
+    val reads: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
+    /** The lane alone, for `withContext`: the caller's job stays its own (and can be cancelled). */
+    val dispatcher: kotlinx.coroutines.CoroutineDispatcher get() = lane
 
     val helper: IOtilityHelper? get() = HelperConnection.current
     val connected: Boolean get() = helper?.asBinder()?.isBinderAlive == true
@@ -394,7 +402,12 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
      * picture-in-picture). A new display with the app moved onto it shows again; the
      * app keeps its page. Returns false when there's nothing to do yet.
      */
-    fun revive(app: AppId, onDone: (Boolean) -> Unit = {}) = bridge.scope.launch {
+    fun revive(app: AppId, stillBlank: () -> Boolean = { true }, onDone: (Boolean) -> Unit = {}) = bridge.scope.launch {
+        // Its first picture may have come while this waited its turn: nothing to do then.
+        if (!stillBlank()) {
+            onDone(false)
+            return@launch
+        }
         val host = synchronized(hosts) { hosts[app] }
         val helper = bridge.helper
         val surface = host?.surface

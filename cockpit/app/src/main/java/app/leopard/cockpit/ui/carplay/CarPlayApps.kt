@@ -149,11 +149,18 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
     LaunchedEffect(nav.zoomRequest) { if (nav.zoomRequest == ScreenId.MAIN) nav.zoomRequest = null }
     // Nothing left here (closed in the app switcher, say): Home. Not at once: an app opened
     // from the sidebar comes a moment after its question is answered.
-    LaunchedEffect(main == ScreenContent.Idle, leaving) {
-        if (main == ScreenContent.Idle && !leaving) {
+    // Not while a question is open (Replace, or "it's on the Driver cluster"): its answer opens the app here.
+    LaunchedEffect(main == ScreenContent.Idle, leaving, alert == null) {
+        if (main == ScreenContent.Idle && !leaving && alert == null) {
             delay(400)
             nav.tab = Tab.OVERVIEW
         }
+    }
+    // An app open here full size stays on the main screen, as zoomed in on the Screens tab:
+    // without this the car's check sends Waze back to the cluster once its grace is over.
+    DisposableEffect(leaving) {
+        if (!leaving) controller.setMainZoomed(true)
+        onDispose { if (!leaving) controller.setMainZoomed(false) }
     }
     BackHandler(enabled = !leaving) { nav.tab = Tab.OVERVIEW }
 

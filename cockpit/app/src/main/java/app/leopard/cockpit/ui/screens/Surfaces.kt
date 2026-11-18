@@ -153,7 +153,7 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
     private var textureSurface: Surface? = null
     private var textureFit: (Int, Int) -> Unit = { _, _ -> }
     /** Pictures since the TextureView got its buffer. */
-    private var frames = 0
+    @Volatile private var frames = 0
     private var revived = 0
     /** The app has shown a picture here. */
     var shown by mutableStateOf(false)
@@ -209,7 +209,7 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
         val check = object : Runnable {
             override fun run() {
                 if (textureSurface == null || frames > 0 || directFed || revived >= 3) return
-                hosts.revive(app) { done ->
+                hosts.revive(app, stillBlank = { frames == 0 && textureSurface != null && !directFed }) { done ->
                     tv.post {
                         if (done) revived++
                         if (textureSurface != null) tv.postDelayed(this, if (done) FIRST_FRAME_MS * 2 else FIRST_FRAME_MS)
@@ -225,9 +225,17 @@ private class HostFeed(val app: AppId, val hosts: HostManager) {
                 textureFit = { bw, bh -> runCatching { st.setDefaultBufferSize(bw, bh) } }
                 frames = 0
                 if (directFed) return // it takes over again if the SurfaceView goes
-                hosts.attach(app, component, s, w, h, dpi, fit = textureFit)
                 tv.removeCallbacks(check)
-                tv.postDelayed(check, FIRST_FRAME_MS)
+                // Counted from when the display has the buffer, not from now: the bridge's
+                // lane can be busy for seconds (opening a place in Waze), and a wait for
+                // it isn't a display that shows nothing.
+                hosts.attach(app, component, s, w, h, dpi, fit = textureFit).invokeOnCompletion {
+                    tv.post {
+                        if (textureSurface !== s) return@post
+                        tv.removeCallbacks(check)
+                        tv.postDelayed(check, FIRST_FRAME_MS)
+                    }
+                }
             }
 
             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, vw: Int, vh: Int) {

@@ -266,6 +266,7 @@ private fun androidx.compose.foundation.layout.BoxScope.SongView(
 @Composable
 private fun VideoView(tr: Track, info: AppInfo?, accent: Color, onSong: () -> Unit, onExpand: () -> Unit) {
     val otility = Otility.instance
+    val nav = LocalNav.current
     val app = AppId(tr.pkg)
     var controls by remember { mutableStateOf(true) }
     var touchedAt by remember { mutableLongStateOf(0L) }
@@ -296,6 +297,11 @@ private fun VideoView(tr: Track, info: AppInfo?, accent: Color, onSong: () -> Un
         HostSurface(
             app, info?.component?.flattenToShortString() ?: app.pkg, VIDEO_W, VIDEO_H,
             Modifier.fillMaxSize().cover(VIDEO_W, VIDEO_H), dpi = VIDEO_DPI,
+            // Straight to the screen, as the map: through Otility's own view, every frame
+            // of the video made all of Otility draw itself again (30 to 60 times a second),
+            // and taps waited behind that. Not under a sheet's glass, nor while Home's page
+            // turns under the sidebar's (see Nav.direct): it would show the video sharp.
+            direct = nav.sheet == null && !nav.direct,
         )
         // Paused, the app draws its own controls over the picture: the poster covers them,
         // until a moment after it plays again (by when the app has put them away).

@@ -146,6 +146,27 @@ internal object Hidden {
         call(activityTasks, "startActivityFromRecents", taskId, options)
     }
 
+    /**
+     * Starts [intent] on [displayId] the way `am start-activity` does, but in this
+     * process (spawning `am` costs the car 1–2 s): as the shell, no calling app, for
+     * [userId]. Returns Android's START_* code (0 or more: started). Throws when
+     * neither call is there with the expected arguments (the caller falls back to am);
+     * Android's own refusal (a SecurityException, say) comes as an
+     * InvocationTargetException.
+     */
+    fun startActivity(intent: android.content.Intent, displayId: Int, userId: Int = MAIN_USER): Int {
+        val options = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        // caller, callingPackage, callingFeatureId, intent, resolvedType, resultTo, resultWho,
+        // requestCode, flags, profilerInfo, options, userId: the same on Android 11 to 14.
+        val args = arrayOf<Any?>(null, SHELL_PACKAGE, null, intent, null, null, null, 0, 0, null, options, userId)
+        val viaTasks = runCatching { method(activityTasks, "startActivityAsUser", args.size) }.getOrNull()
+        if (viaTasks != null) return viaTasks.invoke(activityTasks, *args) as Int
+        // What `am` itself calls; it hands over to the task manager's call above.
+        return method(activity, "startActivityAsUserWithFeature", args.size).invoke(activity, *args) as Int
+    }
+
+    private const val SHELL_PACKAGE = "com.android.shell"
+
     fun removeTask(taskId: Int): Boolean = call(activityTasks, "removeTask", taskId) as? Boolean ?: false
 
     /**

@@ -164,7 +164,22 @@ class Nav(start: Tab) {
     internal var nowPlayingOrigin: Origin? = null
     /** CarPlay mode: Home's Now Playing card, in the window's pixels: the full player shrinks back into it. */
     var nowPlayingCard = Rect.Zero
+    /** CarPlay mode is on (set by [App]). */
+    var carPlay = false
     fun openScreens(zoom: ScreenId? = null) {
+        if (carPlay && zoom != null && zoom != ScreenId.MAIN) {
+            // CarPlay mode has no car photo: the cluster's map opens up over the main
+            // screen instead, and anything else is shown where CarPlay shows apps.
+            val screens = Otility.instance.screens
+            if (zoom == ScreenId.DRIVER) {
+                val map = screens.state.value[ScreenId.DRIVER].apps.firstOrNull { screens.keepsOnCluster(it) }
+                if (map != null && screens.peekClusterMap(map) { tab = Tab.SCREENS }) return
+            }
+            tab = Tab.SCREENS
+            zoomRequest = null
+            allScreens = false
+            return
+        }
         tab = Tab.SCREENS
         zoomRequest = zoom
         allScreens = zoom != null && zoom != ScreenId.MAIN
@@ -203,6 +218,7 @@ fun OtilityApp(app: Otility) {
     }
     // CarPlay mode's Home is black in light mode too.
     val carPlay = settings.mode == UiMode.CARPLAY
+    nav.carPlay = carPlay
     // CarPlay mode: the main screen's apps, beside the sidebar (the Screens tab, unless
     // it's opened as all three screens). Leaving them (Home, Back, another tab) sends them
     // to the background, to the app switcher.

@@ -14,8 +14,11 @@ android {
         minSdk = 29
         // The car runs Android 13 (API 33).
         targetSdk = 33
-        versionCode = 37
-        versionName = "0.5.23"
+        versionCode = 38
+        versionName = "0.5.24"
+        // The car (and the Mac's emulator) are 64-bit ARM: the text reader's native part
+        // for the others only made the download three times bigger.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
@@ -62,6 +65,8 @@ dependencies {
 
     // The pairing code for the iPhone, as a QR code.
     implementation("com.google.zxing:core:3.5.3")
+    // Reads Waze's turn card from its picture; the bundled model needs no Google services.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Talks to the car's own debugging service on 127.0.0.1 to start the helper.
     implementation("dev.mobile:dadb:2.0.0")

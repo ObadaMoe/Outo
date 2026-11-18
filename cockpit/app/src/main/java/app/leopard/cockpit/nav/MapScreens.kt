@@ -154,6 +154,10 @@ object MapScreens {
     /** "Al Corniche" from "Turn left onto Al Corniche". */
     private fun streetOf(line: String) = Directions.street(line) ?: line
 
+    /** A turn read from Waze's picture ([WazePicture]). */
+    fun fromPicture(pkg: String, distance: String, street: String?, maneuver: Maneuver, seconds: Int?, metres: Int?) =
+        turn(pkg, distance, street, maneuver, seconds, metres, eta = null)
+
     private fun turn(
         pkg: String, distance: String?, street: String?, maneuver: Maneuver,
         seconds: Int?, metres: Int?, eta: String?, instruction: String? = null, guessed: Boolean = false,

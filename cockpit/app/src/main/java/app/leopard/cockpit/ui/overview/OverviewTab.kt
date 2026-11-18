@@ -313,11 +313,25 @@ private fun widgetMenu(slot: WidgetSlot): List<MenuEntry> {
 }
 
 /**
- * The car's values, read by the widgets that show them, so a new reading (ten a
- * second while the engine sound follows the car) redraws those and not the board.
+ * The car's values, read by the widgets that show them, so a new reading redraws
+ * those and not the board. Four times a second at most: the car sends ten (for the
+ * engine sound), more than a card can show, and each one redrew the cards.
  */
 @Composable
-private fun vehicle(): VehicleData = Otility.instance.vehicle.data.collectAsState().value
+private fun vehicle(): VehicleData {
+    val data = Otility.instance.vehicle.data
+    val slow = remember(data) {
+        kotlinx.coroutines.flow.flow {
+            while (true) {
+                emit(data.value)
+                kotlinx.coroutines.delay(VEHICLE_UI_MS)
+            }
+        }.distinctUntilChanged()
+    }
+    return slow.collectAsState(data.value).value
+}
+
+private const val VEHICLE_UI_MS = 250L
 
 @Composable
 private fun Widget(slot: WidgetSlot) {

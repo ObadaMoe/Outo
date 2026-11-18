@@ -77,10 +77,13 @@ fun Txt(text: String, style: TextStyle, color: Color = LocalTokens.current.text,
 @Composable
 fun AppIcon(app: AppInfo?, size: Dp, modifier: Modifier = Modifier) {
     val shape = rounded(size * 0.225f)
+    // On dark backgrounds (CarPlay's black Home) the shadow can't be seen, but each
+    // icon's was still worked out on every frame a page moved: only in light mode.
+    val lift = !LocalTokens.current.dark
     Box(
         modifier
             .size(size)
-            .shadow(size * 0.12f, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
+            .then(if (lift) Modifier.shadow(size * 0.12f, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f)) else Modifier)
             .clip(shape)
             .background(Color(0xFF2C2D33)),
     ) {

@@ -178,8 +178,14 @@ fun MapWidget(
     val inset = with(density) { 8.dp.toPx() }
     val open = Rect(full.left + railPx, full.top + inset, full.right - inset, full.bottom - inset)
     val rect = lerp(pane, open, p.value)
-    // The app's real size: the pane's, or the opened-up map's.
-    val target = if (expanded) open else pane
+    // The app's real size: the pane's, or the opened-up map's. It changes only once the
+    // map has finished growing or shrinking: resized on the way, the app lays itself out
+    // again while it moves, which shows as a jump. Meanwhile its picture is scaled.
+    var sizedOpen by remember { mutableStateOf(false) }
+    // (By where it is, not only that it's still: just tapped, it hasn't started moving yet.)
+    val atEnd = settled && p.value == (if (expanded) 1f else 0f)
+    LaunchedEffect(expanded, atEnd) { if (atEnd) sizedOpen = expanded }
+    val target = if (sizedOpen) open else pane
     val appW = target.width.roundToInt() and 1.inv()
     val appH = target.height.roundToInt() and 1.inv()
     // The map's app runs all the time (see ScreensController.keepMapRunning): at the card's size.
