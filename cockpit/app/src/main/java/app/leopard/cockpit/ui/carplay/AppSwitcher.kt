@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
@@ -187,6 +190,8 @@ fun AppSwitcherHost() {
         )
     }
     BackHandler(enabled = open) { AppSwitcher.hide() }
+    // Fresh pictures for the cards: the apps on the screen now, and the parked ones.
+    LaunchedEffect(open) { if (open) controller.takeShots(controller.spaces.value.flatMap { it.apps }) }
 }
 
 /** The cards' corners. */
@@ -259,6 +264,7 @@ private fun SpaceCard(
         rise.animateTo(1f, spring(0.82f, 300f))
     }
     val infos = space.apps.map { byId[it] }
+    val shots by Otility.instance.screens.shots.collectAsState()
     // The card, in the window's pixels: its windows grow out of it.
     var card by remember { mutableStateOf(Rect.Zero) }
     val open = {
@@ -325,13 +331,23 @@ private fun SpaceCard(
             horizontalArrangement = Arrangement.spacedBy(CardGap),
         ) {
             when (space) {
-                is ScreenContent.Single -> AppPoster(infos.first(), Modifier.fillMaxHeight())
+                is ScreenContent.Single -> Preview(space.app, infos.first(), shots, Modifier.fillMaxSize())
                 is ScreenContent.Split -> {
-                    Box(Modifier.weight(space.ratio).fillMaxHeight()) { AppPoster(infos[0]) }
-                    Box(Modifier.weight(1f - space.ratio).fillMaxHeight()) { AppPoster(infos[1]) }
+                    Preview(space.left, infos[0], shots, Modifier.weight(space.ratio).fillMaxHeight())
+                    Preview(space.right, infos[1], shots, Modifier.weight(1f - space.ratio).fillMaxHeight())
                 }
                 ScreenContent.Idle -> {}
             }
         }
+    }
+}
+
+/** An app on its card: its last picture, as an iPad's switcher shows it, or its poster until there is one. */
+@Composable
+private fun Preview(app: AppId, info: AppInfo?, shots: Map<AppId, ImageBitmap>, modifier: Modifier) {
+    Box(modifier) {
+        AppPoster(info, Modifier.fillMaxSize())
+        val shot = shots[app]
+        if (shot != null) Image(shot, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
 }

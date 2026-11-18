@@ -253,6 +253,11 @@ class HostManager(private val bridge: CarBridge, private val store: android.cont
 
     fun displayOf(app: AppId): Int? = synchronized(hosts) { hosts[app]?.displayId?.takeIf { it >= 0 } }
 
+    /** [app]'s display and the size the app runs at there (parked too), for its picture. */
+    fun displayAndSize(app: AppId): Triple<Int, Int, Int>? = synchronized(hosts) {
+        hosts[app]?.takeIf { it.displayId >= 0 && it.w > 0 && it.h > 0 }?.let { Triple(it.displayId, it.w, it.h) }
+    }
+
     /**
      * [create] off: only for an app still hosted. A view handing the picture back (a
      * SurfaceView going away as the app closes or leaves for another screen) mustn't

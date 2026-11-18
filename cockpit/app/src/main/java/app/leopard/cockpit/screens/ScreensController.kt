@@ -21,6 +21,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -654,6 +656,40 @@ class ScreensController(
     /** What the main screen showed lately, one app or two side by side, the latest first. */
     val spaces: StateFlow<List<ScreenContent>> get() = prefs.spaces
 
+    private val _shots = MutableStateFlow<Map<AppId, ImageBitmap>>(emptyMap())
+    /** The app switcher's pictures of its apps, as they were last seen (see [takeShots]). */
+    val shots: StateFlow<Map<AppId, ImageBitmap>> = _shots.asStateFlow()
+
+    /**
+     * Pictures of [apps] for the app switcher's cards, taken by the helper from their
+     * displays (a parked app's too: it keeps its last picture there). Small, as the
+     * map reader's are: the cards are too. Only the switcher's apps are kept.
+     */
+    fun takeShots(apps: Collection<AppId>) {
+        if (bridge.helper == null || apps.isEmpty()) return
+        ui.launch {
+            for (app in apps.distinct()) {
+                val shot = withContext(bridge.reads) { shotOf(app) } ?: continue
+                _shots.value = _shots.value + (app to shot)
+            }
+            val kept = prefs.spaces.value.flatMap { it.apps }.toSet()
+            if (_shots.value.keys.any { it !in kept }) _shots.value = _shots.value.filterKeys { it in kept }
+        }
+    }
+
+    private fun shotOf(app: AppId): ImageBitmap? {
+        val helper = bridge.helper ?: return null
+        val (display, w, h) = hosts.displayAndSize(app) ?: return null
+        val scale = minOf(1f, SHOT_SIDE.toFloat() / w, SHOT_SIDE.toFloat() / h, kotlin.math.sqrt(SHOT_PIXELS.toFloat() / (w.toFloat() * h)))
+        val sw = (w * scale).toInt().coerceAtLeast(8)
+        val sh = (h * scale).toInt().coerceAtLeast(8)
+        val px = runCatching { helper.capture(display, 0, 0, w, h, sw, sh) }.getOrNull() ?: return null
+        if (px.size < sw * sh) return null
+        // Nothing drawn (a display without its picture yet): keep the last one.
+        if (px.all { (it and 0xFFFFFF) == 0 }) return null
+        return android.graphics.Bitmap.createBitmap(px, sw, sh, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+
     /**
      * Home, in CarPlay mode: the main screen's apps go to the background. They're parked
      * (running on for a while, longer while one plays) and wait in the app switcher.
@@ -714,6 +750,8 @@ class ScreensController(
         // And for CarPlay mode's app switcher: what the main screen shows, as one card.
         val main = next[ScreenId.MAIN]
         if (main != ScreenContent.Idle && main != prev[ScreenId.MAIN]) prefs.setSpaces(Screens.noteSpace(prefs.spaces.value, main, SPACES_MAX))
+        // Apps leaving the main screen: their last picture, for the switcher's card.
+        if (prefs.settings.value.mode == UiMode.CARPLAY) takeShots(prev[ScreenId.MAIN].apps - next[ScreenId.MAIN].apps.toSet())
         lastLocalChange = System.currentTimeMillis()
         prefs.saveLastLayout(next)
         reconcile(prev, next)
@@ -1013,6 +1051,9 @@ private const val CLUSTER_RETRY_MS = 10_000L
 
 /** How long the cluster's map, just put on the main screen, waits there to be zoomed in on. */
 private const val MAIN_GRACE_MS = 6_000L
+/** The switcher's pictures: the helper's limits for one (see HelperMain.capture). */
+private const val SHOT_SIDE = 720
+private const val SHOT_PIXELS = 110_000
 /** A pop-up older than this when Otility first hears of it is left where the helper put it. */
 private const val POPUP_FRESH_MS = 8_000L
 /** The same app's pop-ups this close together come forward once. */

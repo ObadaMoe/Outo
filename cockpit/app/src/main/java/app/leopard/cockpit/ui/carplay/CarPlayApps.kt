@@ -453,7 +453,8 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
                     controller.place(other, DropTarget(ScreenId.MAIN, if (halfNow!! < 0) Slot.RIGHT else Slot.LEFT), confirm = false)
                     half = null
                 },
-                Modifier.at { pickerPane }.graphicsLayer {
+                onClose = { half = null },
+                modifier = Modifier.at { pickerPane }.graphicsLayer {
                     alpha = appear.value.coerceIn(0f, 1f)
                     val s = 0.94f + 0.06f * appear.value
                     scaleX = s; scaleY = s
