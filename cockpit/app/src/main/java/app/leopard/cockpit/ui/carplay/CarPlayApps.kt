@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -55,9 +56,11 @@ import app.leopard.cockpit.car.HelperConnection
 import app.leopard.cockpit.data.AppInfo
 import app.leopard.cockpit.data.Tab
 import app.leopard.cockpit.screens.AppId
+import app.leopard.cockpit.screens.DropTarget
 import app.leopard.cockpit.screens.ScreenContent
 import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.screens.Screens
+import app.leopard.cockpit.screens.Slot
 import app.leopard.cockpit.ui.Alerts
 import app.leopard.cockpit.ui.Capsule
 import app.leopard.cockpit.ui.LocalNav
@@ -202,16 +205,45 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         var dragRatio by remember { mutableStateOf<Float?>(null) }
         val split = content as? ScreenContent.Split
         val ratio = dragRatio ?: split?.ratio ?: 0.5f
+        // One app moved to a side by three fingers (-1 left, 1 right; null: full size), the
+        // other half picking what opens next to it. Gone once there are two, or none.
+        var half by remember { mutableStateOf<Int?>(null) }
+        val single = content as? ScreenContent.Single
+        LaunchedEffect(single?.app, leaving) { if (single == null || leaving) half = null }
+        val halfNow = half?.takeIf { single != null }
         fun hostSize(app: AppId): Pair<Int, Int> {
+            if (halfNow != null) return ((area.width - gap) / 2f).toInt() to area.height.toInt()
             val s = split ?: return area.width.toInt() to area.height.toInt()
             val r = Screens.clampRatio(s.ratio)
             val share = if (s.left == app) r else 1f - r
             return ((area.width - gap) * share).toInt() to area.height.toInt()
         }
         val targets: Map<AppId, Rect> = when (content) {
-            is ScreenContent.Single -> mapOf(content.app to area)
+            is ScreenContent.Single -> mapOf(
+                content.app to (if (halfNow == null) area else panes(0.5f).let { (l, r) -> if (halfNow < 0) l else r }),
+            )
             is ScreenContent.Split -> panes(ratio).let { (l, r) -> mapOf(content.left to l, content.right to r) }
             ScreenContent.Idle -> emptyMap()
+        }
+        val pickerPane = halfNow?.let { s -> panes(0.5f).let { (l, r) -> if (s < 0) r else l } }
+        BackHandler(enabled = halfNow != null && !leaving) { half = null }
+
+        // An app from the sidebar let go over the apps: into the half it's over, next to
+        // what's there (or in place of that half's app, of two).
+        val contentNow by rememberUpdatedState(content)
+        DisposableEffect(leaving) {
+            if (!leaving) nav.dropOnApps = drop@{ app, p ->
+                val local = p - inWindow[0]
+                val a = areaNow
+                if (!a.contains(local)) return@drop false
+                val c = contentNow
+                if (c is ScreenContent.Single && c.app == app) return@drop false
+                val slot = if (local.x < a.center.x) Slot.LEFT else Slot.RIGHT
+                controller.place(app, DropTarget(ScreenId.MAIN, slot), confirm = false)
+                half = null
+                true
+            }
+            onDispose { if (!leaving) nav.dropOnApps = null }
         }
 
         // ---- The windows, coming and going ---------------------------------------------
@@ -377,13 +409,61 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
             router.gestures = settings.gestures
             // Two fingers are the app's here (a map's zoom, say), except two straight up: the switcher's.
             router.twoFingers = false
-            router.targets = content.apps.mapNotNull { id ->
+            // While the other half picks, touches go to the app's half only: the picker has its own.
+            val touchArea = if (halfNow != null) targets.values.first() else area
+            val apps = content.apps
+            // Three fingers sideways: one app moves to that side, the other half picking what
+            // opens next to it; of two, the app under them changes sides.
+            router.onThreeSide = { side, pane ->
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                when (val c = contentNow) {
+                    is ScreenContent.Single -> half = side
+                    is ScreenContent.Split -> apps.getOrNull(pane)?.let { app ->
+                        controller.place(app, DropTarget(ScreenId.MAIN, if (side < 0) Slot.LEFT else Slot.RIGHT), confirm = false)
+                    }
+                    ScreenContent.Idle -> {}
+                }
+            }
+            router.targets = apps.mapNotNull { id ->
                 val r = targets[id] ?: return@mapNotNull null
                 // In the app's terms: the size it runs at now.
                 val size = { wins[id]?.size ?: hostSize(id).let { (a, b) -> IntSize(a, b) } }
-                TouchTarget(r.translate(-area.left, -area.top), { controller.hosts.displayOf(id) }, { size().width }, { size().height })
+                TouchTarget(r.translate(-touchArea.left, -touchArea.top), { controller.hosts.displayOf(id) }, { size().width }, { size().height })
             }
-            Box(Modifier.at(area).routeTouches(router))
+            Box(Modifier.at(touchArea).routeTouches(router))
+        }
+
+        // ---- The other half, picking an app to open next to the one moved aside ----------
+        if (pickerPane != null && single != null && !leaving) {
+            val appear = remember { Animatable(0f) }
+            LaunchedEffect(Unit) { appear.animateTo(1f, Motion.settle()) }
+            HalfPicker(
+                single.app,
+                onPick = { other ->
+                    nav.launchOrigins.remove(other)
+                    controller.place(other, DropTarget(ScreenId.MAIN, if (halfNow!! < 0) Slot.RIGHT else Slot.LEFT), confirm = false)
+                    half = null
+                },
+                Modifier.at { pickerPane }.graphicsLayer {
+                    alpha = appear.value.coerceIn(0f, 1f)
+                    val s = 0.94f + 0.06f * appear.value
+                    scaleX = s; scaleY = s
+                },
+            )
+        }
+
+        // ---- A sidebar app dragged over the apps: the half it would go into, lit -----------
+        val dragged = nav.dragging
+        if (dragged != null && !leaving) {
+            val local = nav.dragAt - inWindow[0]
+            if (area.contains(local)) {
+                val hint = panes(0.5f).let { (l, r) -> if (local.x < area.center.x) l else r }
+                Box(
+                    Modifier.at { hint }
+                        .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(WindowCorner))
+                        .border(2.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(WindowCorner)),
+                )
+            }
         }
 
         // ---- The handle between two: drag to resize, past an edge for one app -------------

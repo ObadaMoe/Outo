@@ -12,6 +12,7 @@ import app.leopard.cockpit.data.AppCatalog
 import app.leopard.cockpit.data.Layout
 import app.leopard.cockpit.data.Prefs
 import app.leopard.cockpit.data.SPACES_MAX
+import app.leopard.cockpit.data.UiMode
 import app.leopard.cockpit.ui.Alert
 import app.leopard.cockpit.ui.AlertButton
 import app.leopard.cockpit.ui.Alerts
@@ -454,6 +455,14 @@ class ScreensController(
         val clusterMap = keepsOnCluster(app)
         if (clusterMap && on != ScreenId.MAIN) return tap(app, ScreenId.MAIN, show)
         val state = _state.value
+        // CarPlay mode: no questions. The app comes up full size on the main screen (what was
+        // there goes to the app switcher), the cluster's map too. Two side by side come from
+        // dragging one in from the sidebar, or three fingers sideways on the app (see CarPlayApps).
+        if (prefs.settings.value.mode == UiMode.CARPLAY) {
+            if (_pip.value == app || state.screenOf(app) != ScreenId.MAIN) place(app, DropTarget(ScreenId.MAIN, Slot.FULL), confirm = false)
+            show(ScreenId.MAIN)
+            return
+        }
         // On the cluster it isn't open anywhere the driver uses it: no question about moving it.
         val from = state.screenOf(app)?.takeUnless { clusterMap && it == ScreenId.DRIVER }
         val name = label(app)

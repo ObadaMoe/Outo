@@ -212,6 +212,11 @@ class TouchRouter(
     var gestures: Boolean = true
     /** Off: two fingers are the app's (CarPlay mode's apps, where only the edge's Back is Otility's). */
     var twoFingers: Boolean = true
+    /**
+     * Three fingers left or right (-1, 1), with the app under them ([target]'s index), taken
+     * from the app; null: three fingers are the app's too.
+     */
+    var onThreeSide: ((side: Int, pane: Int) -> Unit)? = null
     /** Pulls in from either edge, followed (see [EdgePull]); without it, only the left edge's Back. */
     var edgePull: EdgePull? = null
     /** The area's width: where its right edge is. */
@@ -264,7 +269,7 @@ class TouchRouter(
                 // A second finger ends a pull (and the touch stays Otility's).
                 if (pulling) { endPull(0f); return true }
                 flushEdge()
-                if (gestures && twoFingers && ev.pointerCount == 2) {
+                if (gestures && ((twoFingers && ev.pointerCount == 2) || (onThreeSide != null && ev.pointerCount == 3))) {
                     multi = ev.pointerCount
                     startX = cx(ev); startY = cy(ev); startSpan = span(ev)
                     startTime = ev.eventTime
@@ -307,7 +312,14 @@ class TouchRouter(
                     return true
                 }
                 if (ours) return true
-                if (multi >= 2 && ev.pointerCount == multi && ev.eventTime - startTime < 900) {
+                val three = onThreeSide
+                if (multi == 3 && three != null && ev.pointerCount == 3 && ev.eventTime - startTime < 900) {
+                    val dx = cx(ev) - startX
+                    val dy = cy(ev) - startY
+                    if (abs(dx) > 70 * dp && abs(dx) > abs(dy) * 1.4f) {
+                        takeOver(); three(if (dx < 0) -1 else 1, targets.indexOf(target)); return true
+                    }
+                } else if (multi == 2 && ev.pointerCount == multi && ev.eventTime - startTime < 900) {
                     val dx = cx(ev) - startX
                     val dy = cy(ev) - startY
                     val spanChange = abs(span(ev) - startSpan)

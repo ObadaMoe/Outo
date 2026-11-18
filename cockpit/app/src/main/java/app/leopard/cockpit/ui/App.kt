@@ -166,6 +166,11 @@ class Nav(start: Tab) {
     var nowPlayingCard = Rect.Zero
     /** CarPlay mode is on (set by [App]). */
     var carPlay = false
+    /**
+     * CarPlay mode, while its apps are shown: a sidebar app let go at this point (the
+     * window's pixels) goes into that half, next to what's open. False if it isn't over them.
+     */
+    var dropOnApps: ((AppId, Offset) -> Boolean)? = null
     fun openScreens(zoom: ScreenId? = null) {
         if (carPlay && zoom != null && zoom != ScreenId.MAIN) {
             // CarPlay mode has no car photo: the cluster's map opens up over the main

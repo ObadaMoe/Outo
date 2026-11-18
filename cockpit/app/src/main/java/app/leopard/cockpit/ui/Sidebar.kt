@@ -337,7 +337,8 @@ private fun ownLift(nav: Nav, a: AppInfo, pinned: Boolean) = LiftCallbacks(
     onHold = { bounds -> nav.menu = MenuRequest(bounds, pinnedMenu(nav, a, pinned), a) },
     onDragStart = { p -> nav.menu = null; nav.dragging = a.id; nav.dragAt = p },
     onDrag = { p -> nav.dragAt = p },
-    onDrop = { p -> nav.pinAt(a.id, p); nav.dragging = null },
+    // Over CarPlay mode's apps: into the half it's over. Otherwise moved on the sidebar.
+    onDrop = { p -> if (nav.dropOnApps?.invoke(a.id, p) != true) nav.pinAt(a.id, p); nav.dragging = null },
     onCancel = { nav.dragging = null },
 )
 
