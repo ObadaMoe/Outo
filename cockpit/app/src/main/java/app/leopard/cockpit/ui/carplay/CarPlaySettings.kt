@@ -44,14 +44,16 @@ import app.leopard.cockpit.ui.SidebarMargin
 import app.leopard.cockpit.ui.screens.at
 import app.leopard.cockpit.ui.screens.smoothstep
 import app.leopard.cockpit.ui.settings.SettingsPanel
+import app.leopard.cockpit.ui.theme.LocalTokens
 import app.leopard.cockpit.ui.theme.OtilityTheme
 import app.leopard.cockpit.ui.theme.tokens
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.roundToInt
 
-/** Settings' window, a shade darker than the cards on it, as CarPlay's apps are. */
+/** Settings' window, a shade darker than the cards on it, as CarPlay's apps are (light: Apple's grouped grey). */
 private val WindowFace = Color(0xFF16181C)
+private val WindowFaceLight = Color(0xFFF2F2F7)
 
 /** Settings' tile: Apple's grey, top to bottom. */
 internal val SettingsTileBrush = Brush.verticalGradient(listOf(Color(0xFF9A9AA0), Color(0xFF4A4A4F)))
@@ -59,8 +61,8 @@ internal val SettingsTileBrush = Brush.verticalGradient(listOf(Color(0xFF9A9AA0)
 /**
  * CarPlay mode's Settings: one of Home's apps, so it opens as one, in a window beside
  * the sidebar and as tall as it, growing out of its tile (the tile first, the pages coming
- * in as it grows) and shrinking back into it on Home. Always dark, as CarPlay is, on
- * Home's black with the emblem.
+ * in as it grows) and shrinking back into it on Home. Light or dark as Outo's appearance
+ * is, on CarPlay mode's wallpaper.
  *
  * [grown]: 0 at the tile, 1 open; [leaving]: on the way out (into the tile for Home,
  * else fading where it is).
@@ -71,13 +73,14 @@ fun CarPlaySettings(grown: () -> Float, leaving: Boolean) {
     val nav = LocalNav.current
     val density = LocalDensity.current
     val settings by app.prefs.settings.collectAsState()
-    val dark = remember(settings.accent, settings.reduceTransparency, settings.tintedGlass) {
-        tokens(true, settings.accent, settings.reduceTransparency, settings.tintedGlass)
+    val appDark = LocalTokens.current.dark
+    val look = remember(appDark, settings.accent, settings.reduceTransparency, settings.tintedGlass) {
+        tokens(appDark, settings.accent, settings.reduceTransparency, settings.tintedGlass)
     }
     // Grown out of the tile just tapped; from elsewhere (Back, a search), faded in.
     val enter = remember { nav.settingsOrigin?.takeIf { it.fresh }.also { nav.settingsOrigin = null } }
     val inWindow = remember { arrayOf(Offset.Zero) }
-    OtilityTheme(dark) {
+    OtilityTheme(look) {
         val backdrop = rememberLayerBackdrop()
         Box(Modifier.fillMaxSize()) {
             // Home's wallpaper, coming in with the window (Home fades behind it).
@@ -87,14 +90,7 @@ fun CarPlaySettings(grown: () -> Float, leaving: Boolean) {
                     .graphicsLayer { alpha = grown().coerceIn(0f, 1f) }
                     .layerBackdrop(backdrop),
             ) {
-                Box(Modifier.fillMaxSize().background(Color.Black))
-                Image(
-                    painterResource(R.drawable.emblem), null,
-                    Modifier
-                        .align(Alignment.Center)
-                        .size(min(maxHeight * 0.46f, maxWidth * 0.3f))
-                        .graphicsLayer { alpha = 0.4f },
-                )
+                CarPlayWallpaper()
             }
             BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { inWindow[0] = it.positionInRoot() }) {
                 val w = constraints.maxWidth.toFloat()
@@ -130,7 +126,7 @@ fun CarPlaySettings(grown: () -> Float, leaving: Boolean) {
                             shape = RoundedCornerShape(origin.corner + (corner - origin.corner) * p)
                             clip = true
                         }
-                        .background(WindowFace),
+                        .background(if (LocalTokens.current.dark) WindowFace else WindowFaceLight),
                 ) {
                     // The tile, filling the window at first, giving way to the pages.
                     if (origin.kind == Origin.Kind.ICON) TileFace(grown)

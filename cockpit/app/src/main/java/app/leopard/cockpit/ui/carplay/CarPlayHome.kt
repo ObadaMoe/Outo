@@ -143,7 +143,6 @@ private sealed interface HomeItem {
 }
 
 /** The emblem under the apps: quieter than on an idle screen, so their names read. */
-private const val EMBLEM_ALPHA = 0.4f
 
 /** An app's place on Home: as many columns and rows as fit, CarPlay's big icons. */
 private val CellWidth = 176.dp
@@ -186,25 +185,20 @@ private val NavSlot = WidgetSlot(WidgetKind.NAVIGATION, WidgetSize(3, 2))
 fun CarPlayHome() {
     val app = Otility.instance
     val settings by app.prefs.settings.collectAsState()
-    val dark = remember(settings.accent, settings.reduceTransparency, settings.tintedGlass) {
-        tokens(true, settings.accent, settings.reduceTransparency, settings.tintedGlass)
+    // Light or dark as Outo's appearance is (Automatic included), the cards too.
+    val appDark = LocalTokens.current.dark
+    val look = remember(appDark, settings.accent, settings.reduceTransparency, settings.tintedGlass) {
+        tokens(appDark, settings.accent, settings.reduceTransparency, settings.tintedGlass)
     }
     val all by app.catalog.apps.collectAsState()
     val items = remember(all) { listOf<HomeItem>(HomeItem.Settings) + all.map { HomeItem.App(it) } }
-    OtilityTheme(dark) {
+    OtilityTheme(look) {
         val backdrop = rememberLayerBackdrop()
         Box(Modifier.fillMaxSize()) {
             // The wallpaper, under the car's bars too, as the screens' photo is. The
             // cards' glass blurs it.
-            BoxWithConstraints(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-                Box(Modifier.fillMaxSize().background(Color.Black))
-                Image(
-                    painterResource(R.drawable.emblem), null,
-                    Modifier
-                        .align(Alignment.Center)
-                        .size(min(maxHeight * 0.46f, maxWidth * 0.3f))
-                        .graphicsLayer { alpha = EMBLEM_ALPHA },
-                )
+            Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+                CarPlayWallpaper()
             }
             CompositionLocalProvider(LocalBackdrop provides backdrop) {
                 Box(
@@ -471,7 +465,12 @@ private fun Pages(items: List<HomeItem>) {
             Modifier
                 .align(Alignment.BottomCenter)
                 .padding(start = ContentStart, end = SidebarMargin, bottom = SidebarMargin + (Dots - DotsHeight) / 2)
-                .graphicsLayer { alpha = 1f - mapOpen.value.coerceIn(0f, 1f) },
+                // Not on the dashboard, whose cards and map take their room: they come in
+                // as the apps' pages do (and while editing, for the pages to drag to).
+                .graphicsLayer {
+                    val toApps = if (editing) 1f else (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, 1f)
+                    alpha = toApps * (1f - mapOpen.value.coerceIn(0f, 1f))
+                },
         )
         if (editing) {
             Row(
@@ -504,12 +503,12 @@ private fun EditPill(label: String, filled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .height(30.dp)
-            .background(if (filled) t.fill else Color.White.copy(alpha = 0.16f), CircleShape)
+            .background(if (filled) t.fill else t.text.copy(alpha = 0.14f), CircleShape)
             .pressable(onClick)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Txt(label, T.subhead.copy(fontWeight = FontWeight.SemiBold), if (filled) t.onFill else Color.White, maxLines = 1)
+        Txt(label, T.subhead.copy(fontWeight = FontWeight.SemiBold), if (filled) t.onFill else t.text, maxLines = 1)
     }
 }
 
@@ -572,7 +571,7 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
     val margin = px(SidebarMargin)
     val mapW = (w - px(ContentStart) - margin - px(WindowGap)) * MAP_SHARE
     val left = px(ContentStart)
-    val pane = Rect(left, margin, left + mapW, h - margin - px(Dots))
+    val pane = Rect(left, margin, left + mapW, h - margin)
     // There, an app window of the map lands on it on the way back to Home.
     SideEffect {
         val o = inWindow[0]
@@ -603,7 +602,7 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
  */
 @Composable
 private fun Dashboard(home: CarHome, editing: Boolean, onPick: (Boolean) -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize().padding(start = ContentStart, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin + Dots)) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(start = ContentStart, end = SidebarMargin, top = SidebarMargin, bottom = SidebarMargin)) {
         val mapW = (maxWidth - WindowGap) * MAP_SHARE
         Row(Modifier.fillMaxSize()) {
             Spacer(Modifier.width(mapW + WindowGap))

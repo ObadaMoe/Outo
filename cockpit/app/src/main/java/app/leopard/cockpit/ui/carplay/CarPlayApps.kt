@@ -169,7 +169,7 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
 
     // Where this page is in the window: origins are in the window's pixels.
     val inWindow = remember { arrayOf(Offset.Zero) }
-    // Black behind the windows, coming in as they grow (Home fades behind it) and going as they shrink.
+    // The wallpaper behind the windows: how far it has come in.
     val backdrop = remember { Animatable(0f) }
     LaunchedEffect(Unit) { backdrop.animateTo(1f, tween(260)) }
 
@@ -177,8 +177,10 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         Modifier
             .fillMaxSize()
             .onGloballyPositioned { inWindow[0] = it.positionInRoot() }
-            .drawBehind { drawRect(Color.Black, alpha = min(backdrop.value, presence()).coerceIn(0f, 1f)) },
     ) {
+        // The wallpaper behind the windows, coming in as they grow (Home fades behind it)
+        // and going as they shrink.
+        CarPlayWallpaper(Modifier.graphicsLayer { alpha = min(backdrop.value, presence()).coerceIn(0f, 1f) })
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         fun px(d: Dp) = with(density) { d.toPx() }

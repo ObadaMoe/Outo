@@ -14,8 +14,8 @@ android {
         minSdk = 29
         // The car runs Android 13 (API 33).
         targetSdk = 33
-        versionCode = 42
-        versionName = "0.5.28"
+        versionCode = 43
+        versionName = "0.5.29"
         // The car (and the Mac's emulator) are 64-bit ARM: the text reader's native part
         // for the others only made the download three times bigger.
         ndk { abiFilters += "arm64-v8a" }

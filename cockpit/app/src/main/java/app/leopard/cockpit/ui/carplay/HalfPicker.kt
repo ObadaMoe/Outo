@@ -32,6 +32,7 @@ import app.leopard.cockpit.ui.Glyph
 import app.leopard.cockpit.ui.Icons
 import app.leopard.cockpit.ui.Txt
 import app.leopard.cockpit.ui.pressable
+import app.leopard.cockpit.ui.theme.LocalTokens
 import app.leopard.cockpit.ui.theme.T
 
 /**
@@ -49,10 +50,12 @@ internal fun HalfPicker(beside: AppId, onPick: (AppId) -> Unit, onClose: () -> U
         val first = recents.mapNotNull { byId[it] }
         (first + all.filter { it !in first }).filter { it.id != beside }
     }
-    Box(modifier.background(Color(0xFF1C1C1E), RoundedCornerShape(WindowCorner))) {
+    val t = LocalTokens.current
+    // The wallpaper shows through, a little veiled so the names read on it.
+    Box(modifier.background((if (t.dark) Color.Black else Color.White).copy(alpha = 0.28f), RoundedCornerShape(WindowCorner))) {
         Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
             Txt(
-                "Open Next To It", T.headline, Color.White.copy(alpha = 0.92f),
+                "Open Next To It", T.headline, t.text,
                 Modifier.align(Alignment.CenterHorizontally),
             )
             Spacer(Modifier.height(6.dp))
@@ -70,7 +73,7 @@ internal fun HalfPicker(beside: AppId, onPick: (AppId) -> Unit, onClose: () -> U
                         AppIcon(a, 72.dp)
                         Spacer(Modifier.height(8.dp))
                         Box(Modifier.padding(horizontal = 4.dp)) {
-                            Txt(a.label, T.subhead.copy(textAlign = TextAlign.Center), Color.White, maxLines = 1)
+                            Txt(a.label, T.subhead.copy(textAlign = TextAlign.Center), t.text, maxLines = 1)
                         }
                     }
                 }
@@ -82,11 +85,11 @@ internal fun HalfPicker(beside: AppId, onPick: (AppId) -> Unit, onClose: () -> U
                 .align(Alignment.TopEnd)
                 .padding(14.dp)
                 .size(40.dp)
-                .background(Color.White.copy(alpha = 0.14f), CircleShape)
+                .background(t.text.copy(alpha = 0.14f), CircleShape)
                 .pressable(onClose),
             contentAlignment = Alignment.Center,
         ) {
-            Glyph(Icons.close, Color.White.copy(alpha = 0.9f), size = 22.dp)
+            Glyph(Icons.close, t.text, size = 22.dp)
         }
     }
 }

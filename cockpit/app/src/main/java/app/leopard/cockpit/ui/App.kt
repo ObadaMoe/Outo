@@ -25,7 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
+import app.leopard.cockpit.ui.theme.rememberSunDark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -208,7 +208,8 @@ fun OtilityApp(app: Otility) {
     val dark = when (settings.appearance) {
         Appearance.LIGHT -> false
         Appearance.DARK -> true
-        Appearance.AUTO -> isSystemInDarkTheme()
+        // By the sun: the car's own Android is dark for good (see DayNight).
+        Appearance.AUTO -> rememberSunDark()
     }
     val t = remember(dark, settings.accent, settings.reduceTransparency, settings.tintedGlass) {
         tokens(dark, settings.accent, settings.reduceTransparency, settings.tintedGlass)
@@ -221,7 +222,6 @@ fun OtilityApp(app: Otility) {
         if (zoom != null && app.prefs.settings.value.mode == UiMode.CARPLAY) nav.openScreens(zoom)
         else if (zoom != null && nav.tab == Tab.SCREENS) nav.zoomRequest = zoom
     }
-    // CarPlay mode's Home is black in light mode too.
     val carPlay = settings.mode == UiMode.CARPLAY
     nav.carPlay = carPlay
     // CarPlay mode: the main screen's apps, beside the sidebar (the Screens tab, unless
@@ -234,14 +234,13 @@ fun OtilityApp(app: Otility) {
         appsWereShown = appsShown
     }
     LaunchedEffect(nav.tab) { if (nav.tab != Tab.SCREENS) nav.allScreens = false }
-    val blackHome = carPlay && nav.tab == Tab.OVERVIEW
     // Dark status bar icons and home bar in light mode, so they show on the white fog.
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
         androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = !dark && !blackHome
-            isAppearanceLightNavigationBars = !dark && !blackHome
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
         }
     }
     // A place from the phone opened the map on the main screen: show it.
