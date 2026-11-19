@@ -167,7 +167,7 @@ fun SettingsPanel(modifier: Modifier, corner: Dp = SidebarCorner) {
                 val focus = LocalFocusManager.current
                 SearchField(query, { query = it }, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp))
                 val update by Otility.instance.updater.state.collectAsState()
-                val updateReady = update is UpdateState.Available
+                val updateReady = update is UpdateState.Available || update is UpdateState.Ready
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -966,9 +966,14 @@ private fun UpdatesGroup() {
     Group(
         header = "Updates",
         footer = "Outo looks for a new version on GitHub (${Updater.REPO}) each time the car starts. " +
+            (if (s.autoUpdate && s.updatePrompts) "When there's one, a pop-up asks to download it, then another to install it, only while parked. " else "") +
             "Updating takes a few seconds, while parked; Outo then opens again by itself.",
     ) {
         Toggle("Check for updates automatically", s.autoUpdate) { st, on -> st.copy(autoUpdate = on) }
+        if (s.autoUpdate) {
+            Separator()
+            Toggle("Ask with pop-ups", s.updatePrompts) { st, on -> st.copy(updatePrompts = on) }
+        }
         Separator()
         @Composable
         fun UpdateButton(label: String) {
@@ -983,6 +988,9 @@ private fun UpdatesGroup() {
                 "Downloading Outo ${u.release.version}…",
                 subtitle = "${(u.progress * 100).roundToInt()}%",
             )
+            is UpdateState.Ready -> SettingRow("Outo ${u.release.version} is downloaded", subtitle = "Ready to install · Outo opens again by itself.") {
+                UpdateButton("Install")
+            }
             is UpdateState.Installing -> SettingRow(
                 "Installing Outo ${u.release.version}…",
                 subtitle = "Outo closes and opens again by itself.",

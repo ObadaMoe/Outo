@@ -378,6 +378,7 @@ fun OtilityApp(app: Otility) {
                         }
                         DraggedApp(Offset(0f, barTop.toFloat()))
                         SheetHost()
+                        UpdatePrompts()
                         AlertHost()
                     }
                 }

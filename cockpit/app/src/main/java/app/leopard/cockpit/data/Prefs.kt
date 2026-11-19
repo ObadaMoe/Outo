@@ -94,6 +94,8 @@ data class Settings(
     // Updates
     /** Look for a new version on GitHub by itself (installing it waits for a tap). */
     val autoUpdate: Boolean = true,
+    /** Ask with pop-ups when that check finds one: Download?, then Install? (while parked). */
+    val updatePrompts: Boolean = true,
 )
 
 data class Layout(val name: String, val state: ScreensState)
@@ -372,7 +374,7 @@ class Prefs(context: Context) {
         put("livePreviews", s.livePreviews)
         put("confirmReplace", s.confirmReplace); put("autoHideSeconds", s.autoHideSeconds)
         put("gestures", s.gestures)
-        put("restoreLayout", s.restoreLayout); put("startWithCar", s.startWithCar); put("autoUpdate", s.autoUpdate); put("startTab", s.startTab.name)
+        put("restoreLayout", s.restoreLayout); put("startWithCar", s.startWithCar); put("autoUpdate", s.autoUpdate); put("updatePrompts", s.updatePrompts); put("startTab", s.startTab.name)
         put("clusterCode", s.clusterCode); put("mapOnCluster", s.mapOnCluster); put("signalView", s.signalView)
         put("phoneHandoff", s.phoneHandoff); put("navApp", s.navApp)
         put("phoneNotes", s.phoneNotes); put("noteText", s.noteText.name)
@@ -414,6 +416,7 @@ class Prefs(context: Context) {
             restoreLayout = b("restoreLayout", d.restoreLayout),
             startWithCar = b("startWithCar", d.startWithCar),
             autoUpdate = b("autoUpdate", d.autoUpdate),
+            updatePrompts = b("updatePrompts", d.updatePrompts),
             startTab = startTab(o, d),
             clusterCode = i("clusterCode", d.clusterCode),
             // Before the switch: on if the cluster had a map, map only.

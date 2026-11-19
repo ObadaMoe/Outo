@@ -1026,7 +1026,7 @@ private fun SettingsTile(modifier: Modifier) {
     val nav = LocalNav.current
     val t = LocalTokens.current
     val update by Otility.instance.updater.state.collectAsState()
-    val badge = update is UpdateState.Available
+    val badge = (update is UpdateState.Available || update is UpdateState.Ready)
     val open = {
         // The dot is a new version: Settings opens where it's installed.
         if (badge) nav.settingsPage = SettingsPage.ABOUT

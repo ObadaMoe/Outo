@@ -33,8 +33,11 @@ sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
     data class UpToDate(val checkedAt: Long) : UpdateState
-    data class Available(val release: Release) : UpdateState
+    /** [automatic]: found by the check Outo makes by itself, not by "Check Now". */
+    data class Available(val release: Release, val automatic: Boolean = false) : UpdateState
     data class Downloading(val release: Release, val progress: Float) : UpdateState
+    /** Downloaded and checked, waiting for the driver to tap Install. */
+    data class Ready(val release: Release, val file: File) : UpdateState
     data class Installing(val release: Release) : UpdateState
     data class Failed(val message: String, val release: Release? = null) : UpdateState
 }
@@ -42,7 +45,8 @@ sealed interface UpdateState {
 /**
  * Updates Outo from its releases on GitHub, without a computer: looks for a newer
  * version (by itself when "Check for updates automatically" is on, or when asked),
- * and installs one when the driver taps Update while parked. The app file is
+ * and installs one when the driver taps Update while parked (or Download, then
+ * Install, in the pop-ups; see UpdatePrompts). The app file is
  * downloaded here, checked (Outo, newer, signed with the same key) and handed to the
  * helper, which installs it as the car's shell may and opens Outo again; Android
  * closes Outo for the update meanwhile.
@@ -55,6 +59,15 @@ class Updater(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.survive)
     private val store = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
+
+    /**
+     * The versions the update pop-ups already asked about this time Outo runs, so
+     * "Later" means until the car starts again.
+     */
+    val askedAvailable = mutableSetOf<String>()
+    val askedReady = mutableSetOf<String>()
+    /** The version whose download a pop-up started, so a failure is told in one too. */
+    @Volatile var promptedDownload: String? = null
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
@@ -88,12 +101,18 @@ class Updater(
     private fun check(manual: Boolean) {
         val before = _state.value
         if (before is UpdateState.Checking || before is UpdateState.Downloading || before is UpdateState.Installing) return
+        // Downloaded already: a check would only offer it again.
+        if (before is UpdateState.Ready && !manual) return
         _state.value = UpdateState.Checking
         runCatching { fetchLatest() }
             .onSuccess { r ->
                 store.edit().putLong(CHECKED_AT, System.currentTimeMillis()).apply()
-                _state.value = if (r != null && isNewer(r.version, current)) UpdateState.Available(r)
-                else UpdateState.UpToDate(System.currentTimeMillis())
+                val ready = before as? UpdateState.Ready
+                _state.value = when {
+                    r == null || !isNewer(r.version, current) -> UpdateState.UpToDate(System.currentTimeMillis())
+                    ready != null && ready.release.version == r.version && ready.file.exists() -> ready
+                    else -> UpdateState.Available(r, automatic = !manual)
+                }
                 if (r != null) Log.i(TAG, "latest release ${r.version} (this is $current)")
             }
             .onFailure { e ->
@@ -137,15 +156,33 @@ class Updater(
     /** The car is moving: an update waits (it restarts Outo, and with it the map on the cluster for a moment). */
     val moving: Boolean get() = (vehicle.data.value.speedKmh ?: 0) > 0
 
-    /** Downloads the release on offer and installs it. */
-    fun install() {
-        val r = when (val s = _state.value) {
-            is UpdateState.Available -> s.release
-            is UpdateState.Failed -> s.release
-            else -> null
-        } ?: return
+    private fun offered(): Release? = when (val s = _state.value) {
+        is UpdateState.Available -> s.release
+        is UpdateState.Failed -> s.release
+        else -> null
+    }
+
+    /** Downloads the release on offer and keeps it, to install when the driver says (the pop-up's Download). */
+    fun download() {
+        val r = offered() ?: return
         scope.launch {
-            val failed = runCatching { installNow(r) }.exceptionOrNull()
+            val failed = runCatching { _state.value = UpdateState.Ready(r, fetch(r)) }.exceptionOrNull()
+            if (failed != null) {
+                Log.w(TAG, "download of ${r.version}", failed)
+                _state.value = UpdateState.Failed(failed.message ?: "The download didn't finish.", r)
+            }
+        }
+    }
+
+    /** Installs the downloaded release, or downloads the one on offer and installs it (Settings' Update). */
+    fun install() {
+        val ready = _state.value as? UpdateState.Ready
+        val r = ready?.release ?: offered() ?: return
+        scope.launch {
+            val failed = runCatching {
+                if (moving) throw IOException("Outo updates while the car is parked.")
+                installNow(r, ready?.file?.takeIf { it.exists() } ?: fetch(r))
+            }.exceptionOrNull()
             if (failed != null) {
                 Log.w(TAG, "update to ${r.version}", failed)
                 _state.value = UpdateState.Failed(failed.message ?: "The update didn't finish.", r)
@@ -153,17 +190,26 @@ class Updater(
         }
     }
 
-    private fun installNow(r: Release) {
-        if (moving) throw IOException("Outo updates while the car is parked.")
-        val helper = bridge.helper ?: throw IOException("Connect to the car first (Settings › Car Connection).")
-        val helperVersion = runCatching { helper.version() }.getOrDefault(0)
-        if (helperVersion < HELPER_INSTALLS) throw IOException("The helper is starting again. Try again in a moment.")
+    /** Downloads [r] into the cache and checks it's Outo, newer and ours. */
+    private fun fetch(r: Release): File {
         _state.value = UpdateState.Downloading(r, 0f)
         val dir = File(context.cacheDir, "update").apply { deleteRecursively(); mkdirs() }
         val file = File(dir, "Outo-${r.version}.apk")
         try {
             download(r, file)
             verify(file)
+            return file
+        } catch (e: Throwable) {
+            dir.deleteRecursively()
+            throw e
+        }
+    }
+
+    private fun installNow(r: Release, file: File) {
+        try {
+            val helper = bridge.helper ?: throw IOException("Connect to the car first (Settings › Car Connection).")
+            val helperVersion = runCatching { helper.version() }.getOrDefault(0)
+            if (helperVersion < HELPER_INSTALLS) throw IOException("The helper is starting again. Try again in a moment.")
             _state.value = UpdateState.Installing(r)
             Log.i(TAG, "installing ${r.version}")
             val out = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { helper.installUpdate(it) }
@@ -171,7 +217,7 @@ class Updater(
             // it didn't install.
             if (out != "ok") throw IOException(out?.removePrefix("error: ")?.replaceFirstChar { it.uppercase() } ?: "The helper couldn't install it.")
         } finally {
-            dir.deleteRecursively()
+            file.parentFile?.deleteRecursively()
         }
     }
 

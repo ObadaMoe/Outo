@@ -212,7 +212,7 @@ fun Sidebar(modifier: Modifier = Modifier) {
             val update by Otility.instance.updater.state.collectAsState()
             TabButton(Tab.SCREENS, Icons.screens)
             Spacer(Modifier.height(4.dp))
-            TabButton(Tab.SETTINGS, Icons.gear, badge = update is UpdateState.Available)
+            TabButton(Tab.SETTINGS, Icons.gear, badge = (update is UpdateState.Available || update is UpdateState.Ready))
             Spacer(Modifier.height(4.dp))
         }
         // In CarPlay mode Home is always white, as CarPlay's is: it leaves an app, and from
