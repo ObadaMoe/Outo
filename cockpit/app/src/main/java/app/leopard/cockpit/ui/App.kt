@@ -155,7 +155,7 @@ class Nav(start: Tab) {
      */
     var allScreens by mutableStateOf(false)
     /** The page CarPlay's Home was on, for when it opens again (Home tapped there goes to the first). */
-    var homePage = 0
+    var homePage by androidx.compose.runtime.mutableIntStateOf(0)
     /** CarPlay mode: Settings' tile tapped, which its window grows out of (see CarPlaySettings). */
     internal var settingsOrigin: Origin? = null
     /** CarPlay mode: Settings' tile on Home, in the window's pixels: its window shrinks back into it. */

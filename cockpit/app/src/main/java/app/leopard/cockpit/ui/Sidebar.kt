@@ -3,6 +3,7 @@ package app.leopard.cockpit.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -236,8 +237,11 @@ fun Sidebar(modifier: Modifier = Modifier) {
         }
         // In CarPlay mode Home is always white, as CarPlay's is: it leaves an app, and from
         // Home it goes to the dashboard.
-        // CarPlay's is nine dots.
-        TabButton(Tab.OVERVIEW, if (mode == UiMode.CARPLAY) Icons.dotGrid else Icons.homeSquare, lit = mode == UiMode.SCREEN)
+        // CarPlay mode, as CarPlay's: nine dots when it goes to the apps' pages (from the
+        // dashboard, or from an app left there), the Home square when it goes to the dashboard.
+        val toApps = mode == UiMode.CARPLAY && nav.back == null && nav.reselect == null &&
+            if (nav.tab == Tab.OVERVIEW) nav.homePage == 0 else nav.homePage > 0
+        TabButton(Tab.OVERVIEW, if (toApps) Icons.dotGrid else Icons.homeSquare, lit = mode == UiMode.SCREEN)
     }
 }
 
@@ -548,8 +552,9 @@ private fun TabButton(tab: Tab, icon: ImageVector, badge: Boolean = false, lit: 
             }),
         contentAlignment = Alignment.Center,
     ) {
-        // The open tab's icon in the accent colour (blue unless another accent is chosen).
-        Glyph(icon, lerp(t.text, t.acc, open), size = 30.dp)
+        // The open tab's icon in the accent colour (blue unless another accent is chosen);
+        // a new icon (Home's, going to the apps or the dashboard) cross-fades in.
+        Crossfade(icon, animationSpec = tween(180), label = "tabIcon") { Glyph(it, lerp(t.text, t.acc, open), size = 30.dp) }
         if (badge) Box(Modifier.align(Alignment.Center).offset(x = 13.dp, y = (-13).dp).size(10.dp).background(t.destructive, CircleShape))
     }
 }
