@@ -62,6 +62,8 @@ fun Modifier.glass(
     tint: Color? = null,
     backdrop: Backdrop = LocalBackdrop.current,
     shadow: Boolean = true,
+    /** The faint hairline round its edge; off for CarPlay mode's sidebar, which has none. */
+    rim: Boolean = true,
 ): Modifier {
     val t = LocalTokens.current
     val surface = tint ?: when (kind) {
@@ -73,7 +75,7 @@ fun Modifier.glass(
         return this
             .then(if (shadow) Modifier.shadow(16.dp, shape, ambientColor = Color.Black, spotColor = Color.Black) else Modifier)
             .background(if (tint != null) tint.copy(alpha = 1f) else t.solidGlass, shape)
-            .then(if (kind == GlassKind.Widget) Modifier else Modifier.border(0.5.dp, t.sep, shape))
+            .then(if (kind == GlassKind.Widget || !rim) Modifier else Modifier.border(0.5.dp, t.sep, shape))
     }
     val flat = kind == GlassKind.Widget
     val d = LocalDensity.current
@@ -81,7 +83,7 @@ fun Modifier.glass(
     val lensH = with(d) { kind.lensHeight.toPx() }
     val lensA = with(d) { kind.lensAmount.toPx() }
     // CarPlay's glass has no glare along its edges, only a faint, even hairline.
-    val rim = if (t.dark) 0.12f else 0.5f
+    val rimAlpha = if (t.dark) 0.12f else 0.5f
     return this.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
@@ -90,11 +92,11 @@ fun Modifier.glass(
             blur(blurPx)
             if (!flat) lens(lensH, lensA)
         },
-        highlight = if (flat) null else {
+        highlight = if (flat || !rim) null else {
             {
                 Highlight(
                     width = 1.dp,
-                    style = HighlightStyle.Plain(color = Color.White.copy(alpha = rim)),
+                    style = HighlightStyle.Plain(color = Color.White.copy(alpha = rimAlpha)),
                 )
             }
         },

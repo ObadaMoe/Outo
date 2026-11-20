@@ -125,6 +125,8 @@ object Icons {
     val expand = stroke("M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5", 2f)
 
     /** Home, as on CarPlay's sidebar: a rounded square. For the Overview. */
+    /** CarPlay's button at the foot of its sidebar: nine dots, for Home. */
+    val dotGrid = fill("M5.2 4.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM11.2 4.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM17.2 4.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM5.2 10.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM11.2 10.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM17.2 10.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM5.2 16.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM11.2 16.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1ZM17.2 16.2h1.6a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-1.6a1 1 0 0 1 1-1Z")
     val homeSquare = stroke("M8.4 4.6h7.2a3.8 3.8 0 0 1 3.8 3.8v7.2a3.8 3.8 0 0 1-3.8 3.8H8.4a3.8 3.8 0 0 1-3.8-3.8V8.4a3.8 3.8 0 0 1 3.8-3.8Z", 2.3f)
 
     /** A gear, for Settings. */

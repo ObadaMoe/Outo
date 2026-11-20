@@ -76,7 +76,7 @@ import kotlin.math.roundToInt
  * The map widget, like CarPlay's dashboard: the map app used last, live, in the
  * pane beside the other widgets ([pane], in the Overview's pixels). Small, it's only to
  * look at: a tap grows it to fill the screen ([full]), where it takes touches, with Back
- * to come out again. Hold it still (or tap it while the widgets shake) for its menu. A map
+ * to come out again (in CarPlay mode, a tap opens the map app as any app: [onOpen]). Hold it still (or tap it while the widgets shake) for its menu. A map
  * on the driver cluster comes off it while the Overview is open, and goes back when it closes.
  */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -93,6 +93,8 @@ fun MapWidget(
     progress: Animatable<Float, AnimationVector1D> = remember { Animatable(0f) },
     // Opened up, what it leaves down the left of [full] (the sidebar's room).
     rail: Dp = SideInset,
+    // Tapped: instead of opening up here, open the map app as any app (CarPlay mode's Home).
+    onOpen: ((AppId) -> Unit)? = null,
 ) {
     val otility = Otility.instance
     val nav = LocalNav.current
@@ -164,6 +166,7 @@ fun MapWidget(
     val onEditingNow by rememberUpdatedState(onEditing)
     val onMenuNow by rememberUpdatedState(onMenu)
     val onRemoveNow by rememberUpdatedState(onRemove)
+    val onOpenNow by rememberUpdatedState(onOpen)
     if (pane.width <= 0f || full.width <= 0f) return
     // Opened up, the map leaves the tab bar its rail down the left, with Back above
     // it, as CarPlay does, so nothing of Otility's covers the map app's banners and buttons.
@@ -217,7 +220,7 @@ fun MapWidget(
                                 editingNow && at.x < badge && at.y < badge -> onRemoveNow()
                                 editingNow -> onMenuNow(slotNow, paneNow)
                                 elsewhere != null -> nav.openScreens(elsewhere)
-                                live -> expanded = true
+                                live -> onOpenNow?.invoke(id!!) ?: run { expanded = true }
                             }
                         },
                     )

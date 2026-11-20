@@ -85,10 +85,12 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** The windows' corners. */
+/** The corners of CarPlay mode's windows (Settings, the dashboard's cards). Apps have none: they fill the screen. */
 internal val WindowCorner = 22.dp
-/** Between two windows side by side, and between the dashboard's widgets. */
+/** Between the dashboard's widgets. */
 internal val WindowGap = 10.dp
+/** Between two apps side by side: a thin black line, with the handle in it. */
+internal val SplitGap = 6.dp
 /** Where CarPlay mode's windows and dashboard start: right of the sidebar, as far from it as it is from the edge. */
 internal val ContentStart = SidebarMargin * 2 + SidebarWidth
 
@@ -115,8 +117,10 @@ private class Win(val app: AppId, rect: Rect, var origin: Origin, grown: Float, 
 }
 
 /**
- * CarPlay mode's apps: what the main screen shows, right of the sidebar (which stays),
- * in rounded windows as tall as it: one app, or two side by side. An app grows out of
+ * CarPlay mode's apps: what the main screen shows, all of it between BYD's bars, as
+ * CarPlay's apps fill its screen, the sidebar floating over them (drag it away to the
+ * left, its handle brings it back): one app, or two side by side with a thin line
+ * between. An app grows out of
  * the icon tapped (or its card in the app switcher); on Home it shrinks back into its
  * sidebar icon (or the dashboard's map). Drag the handle between two to resize them;
  * past an edge, the other one fills the space and the squeezed one goes to the
@@ -184,18 +188,18 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         fun px(d: Dp) = with(density) { d.toPx() }
-        // Right of the sidebar, as tall as it is, between the car's bars.
+        // All of the screen between the car's bars, under the sidebar too.
         val safe = WindowInsets.safeDrawing
-        val margin = px(SidebarMargin)
         val area = Rect(
-            safe.getLeft(density, LayoutDirection.Ltr) + px(ContentStart),
-            safe.getTop(density) + margin,
-            w - safe.getRight(density, LayoutDirection.Ltr) - margin,
-            h - safe.getBottom(density) - margin,
+            safe.getLeft(density, LayoutDirection.Ltr).toFloat(),
+            safe.getTop(density).toFloat(),
+            w - safe.getRight(density, LayoutDirection.Ltr),
+            h - safe.getBottom(density),
         )
         val areaNow by rememberUpdatedState(area)
-        val gap = px(WindowGap)
-        val corner = px(WindowCorner)
+        val gap = px(SplitGap)
+        // Grown, a window is square: it's the screen.
+        val corner = 0f
         val blur = px(28.dp)
         fun panes(ratio: Float): Pair<Rect, Rect> {
             val lw = (area.width - gap) * ratio
@@ -307,6 +311,14 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
         LaunchedEffect(direct) { nav.direct = direct }
         DisposableEffect(Unit) { onDispose { nav.direct = false } }
 
+        // Two side by side: black between them (the wallpaper only shows while they grow).
+        if (split != null || halfNow != null) {
+            val line = { panes(if (split != null) ratio else 0.5f).let { (l, r) -> Rect(l.right, area.top, r.left, area.bottom) } }
+            Box(
+                Modifier.at(line).graphicsLayer { alpha = min(backdrop.value, presence()).coerceIn(0f, 1f) }
+                    .background(Color.Black),
+            )
+        }
         Box(Modifier.fillMaxSize()) {
             for (win in wins.values.toList()) key(win.app.pkg) {
                 val target = targets[win.app]
@@ -456,6 +468,7 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
                     half = null
                 },
                 onClose = { half = null },
+                start = if (pickerPane.left <= area.left + 1f && !nav.sidebarHidden) ContentStart else 0.dp,
                 modifier = Modifier.at { pickerPane }.graphicsLayer {
                     alpha = appear.value.coerceIn(0f, 1f)
                     val s = 0.94f + 0.06f * appear.value
@@ -472,8 +485,8 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
                 val hint = panes(0.5f).let { (l, r) -> if (local.x < area.center.x) l else r }
                 Box(
                     Modifier.at { hint }
-                        .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(WindowCorner))
-                        .border(2.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(WindowCorner)),
+                        .background(Color.White.copy(alpha = 0.16f))
+                        .border(2.dp, Color.White.copy(alpha = 0.55f)),
                 )
             }
         }
@@ -533,7 +546,7 @@ fun CarPlayApps(presence: () -> Float = { 1f }, leaving: Boolean = false) {
                 // A thin pill in the gap, as on an iPad; it stretches while held.
                 Box(
                     Modifier
-                        .size(width = 5.dp, height = 64.dp)
+                        .size(width = 4.dp, height = 64.dp)
                         .graphicsLayer {
                             scaleY = 0.9f + 0.25f * pill.coerceAtLeast(0f)
                             alpha = pill.coerceIn(0f, 1f)

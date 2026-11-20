@@ -109,6 +109,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import app.leopard.cockpit.Otility
+import app.leopard.cockpit.screens.ScreenId
 import app.leopard.cockpit.R
 import app.leopard.cockpit.data.AppInfo
 import app.leopard.cockpit.data.Tab
@@ -589,6 +590,14 @@ private fun DashboardMap(pager: PagerState, w: Float, h: Float, inWindow: Array<
             onRemove = {},
             progress = mapOpen,
             rail = ContentStart,
+            // A tap opens the map app as any app, full screen, growing out of the card
+            // (and back into it on Home).
+            onOpen = { id ->
+                val o = inWindow[0]
+                nav.launchOrigins[id] = Origin(pane.translate(o.x, o.y), px(28.dp), Origin.Kind.LIVE)
+                nav.openScreens()
+                Otility.instance.screens.tap(id, ScreenId.MAIN) { nav.openScreens(it) }
+            },
         )
     }
 }

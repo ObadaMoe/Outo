@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.leopard.cockpit.Otility
 import app.leopard.cockpit.data.AppInfo
@@ -41,7 +42,11 @@ import app.leopard.cockpit.ui.theme.T
  * the app full size again.
  */
 @Composable
-internal fun HalfPicker(beside: AppId, onPick: (AppId) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HalfPicker(
+    beside: AppId, onPick: (AppId) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+    /** On the left half: the room the sidebar floating over it takes. */
+    start: Dp = 0.dp,
+) {
     val otility = Otility.instance
     val all by otility.catalog.apps.collectAsState()
     val recents by otility.prefs.recents.collectAsState()
@@ -52,8 +57,8 @@ internal fun HalfPicker(beside: AppId, onPick: (AppId) -> Unit, onClose: () -> U
     }
     val t = LocalTokens.current
     // The wallpaper shows through, a little veiled so the names read on it.
-    Box(modifier.background((if (t.dark) Color.Black else Color.White).copy(alpha = 0.28f), RoundedCornerShape(WindowCorner))) {
-        Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
+    Box(modifier.background((if (t.dark) Color.Black else Color.White).copy(alpha = 0.28f))) {
+        Column(Modifier.fillMaxSize().padding(start = start, top = 22.dp)) {
             Txt(
                 "Open Next To It", T.headline, t.text,
                 Modifier.align(Alignment.CenterHorizontally),

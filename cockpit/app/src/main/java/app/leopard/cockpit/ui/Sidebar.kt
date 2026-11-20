@@ -71,6 +71,16 @@ import app.leopard.cockpit.screens.Slot
 import app.leopard.cockpit.ui.screens.LiftCallbacks
 import app.leopard.cockpit.ui.screens.liftable
 import app.leopard.cockpit.ui.theme.LocalTokens
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.IntOffset
+import app.leopard.cockpit.ui.theme.OtilityTheme
+import app.leopard.cockpit.ui.theme.tokens
+import kotlin.math.roundToInt
 import app.leopard.cockpit.ui.theme.T
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -146,9 +156,18 @@ fun Sidebar(modifier: Modifier = Modifier) {
             .padding(SidebarMargin)
             .width(SidebarWidth)
             .onGloballyPositioned { nav.sidebarBounds = it.boundsInRoot() }
+            // CarPlay mode: smoky glass with no rim, as CarPlay's, floating over the apps.
             // Over an app whose picture goes straight to the screen, glass can't blur it
-            // (see Nav.direct): nearly solid then, so the icons read.
-            .glass(rounded(SidebarCorner), GlassKind.Bar, tint = if (nav.direct) t.solidGlass.copy(alpha = 0.94f) else null)
+            // (see Nav.direct): more solid then, so the icons read.
+            .glass(
+                rounded(SidebarCorner), GlassKind.Bar,
+                tint = when {
+                    nav.carPlay -> SidebarSmoke.copy(alpha = if (nav.direct) 0.86f else 0.62f)
+                    nav.direct -> t.solidGlass.copy(alpha = 0.94f)
+                    else -> null
+                },
+                rim = !nav.carPlay,
+            )
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -217,9 +236,137 @@ fun Sidebar(modifier: Modifier = Modifier) {
         }
         // In CarPlay mode Home is always white, as CarPlay's is: it leaves an app, and from
         // Home it goes to the dashboard.
-        TabButton(Tab.OVERVIEW, Icons.homeSquare, lit = mode == UiMode.SCREEN)
+        // CarPlay's is nine dots.
+        TabButton(Tab.OVERVIEW, if (mode == UiMode.CARPLAY) Icons.dotGrid else Icons.homeSquare, lit = mode == UiMode.SCREEN)
     }
 }
+
+/** CarPlay mode's sidebar glass: a dark smoke, whatever the appearance, as CarPlay's. */
+val SidebarSmoke = Color(0xFF1C1C21)
+
+/**
+ * The sidebar where it floats: in CarPlay mode always dark, over the apps (which run
+ * under it, all the width of the screen) and Home. Over the apps, drag it to the left
+ * to put it away; [SidebarHandle] brings it back.
+ */
+@Composable
+fun FloatingSidebar() {
+    val nav = LocalNav.current
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val settings by Otility.instance.prefs.settings.collectAsState()
+    // All the way off: its width and both margins.
+    val off = with(density) { (SidebarWidth + SidebarMargin * 2).toPx() }
+    val shift = nav.sidebarShift
+    LaunchedEffect(nav.sidebarHidden, off) {
+        shift.animateTo(if (nav.sidebarHidden) -off else 0f, SidebarSpring)
+    }
+    val canHide = nav.carPlay && nav.appsShown && !nav.sidebarHidden
+    // Before the offset: the finger's moves are measured where the sidebar was, not as it follows.
+    val drag = if (!canHide) Modifier else Modifier.pointerInput(off) {
+        val tracker = VelocityTracker()
+        var x = 0f
+        fun settle(v: Float) {
+            val hide = v < -FLING || (v <= FLING && x < -off * 0.35f)
+            if (hide) nav.sidebarHidden = true
+            else scope.launch { shift.animateTo(0f, SidebarSpring, initialVelocity = v) }
+        }
+        detectHorizontalDragGestures(
+            onDragStart = {
+                tracker.resetTracking()
+                x = shift.value
+                scope.launch { shift.stop() }
+            },
+            onDragEnd = { settle(tracker.calculateVelocity().x) },
+            onDragCancel = { settle(0f) },
+        ) { change, dx ->
+            change.consume()
+            // Only to the left; a little give to the right.
+            x = (x + dx).coerceIn(-off, off * 0.04f)
+            tracker.addPosition(change.uptimeMillis, Offset(x, 0f))
+            scope.launch { shift.snapTo(x) }
+        }
+    }
+    val body = drag.offset { IntOffset(shift.value.roundToInt(), 0) }
+    if (nav.carPlay) {
+        val look = remember(settings.accent, settings.reduceTransparency, settings.tintedGlass) {
+            tokens(true, settings.accent, settings.reduceTransparency, settings.tintedGlass)
+        }
+        OtilityTheme(look) { Sidebar(body) }
+    } else {
+        Sidebar(body)
+    }
+}
+
+/**
+ * The sidebar put away (CarPlay mode, over the apps): a small smoky tab at the left edge.
+ * Tap it, or pull it to the right, and the sidebar comes back. Android's (and BYD's)
+ * swipe in from the edge for Back is kept off it, so pulling it doesn't go back too.
+ */
+@Composable
+fun SidebarHandle(modifier: Modifier = Modifier) {
+    val nav = LocalNav.current
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val off = with(density) { (SidebarWidth + SidebarMargin * 2).toPx() }
+    val shift = nav.sidebarShift
+    val shown = nav.carPlay && nav.appsShown && nav.sidebarHidden
+    val appear by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 260 else 140), label = "handle")
+    if (!shown && appear == 0f) return
+    Box(
+        modifier
+            .size(width = 44.dp, height = 160.dp)
+            .systemGestureExclusion()
+            .then(
+                if (!shown) Modifier
+                else Modifier
+                    .pointerInput(Unit) { detectTapGestures { nav.sidebarHidden = false } }
+                    .pointerInput(off) {
+                        val tracker = VelocityTracker()
+                        var x = -off
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                tracker.resetTracking()
+                                x = shift.value
+                                scope.launch { shift.stop() }
+                            },
+                            onDragEnd = {
+                                val v = tracker.calculateVelocity().x
+                                val back = v > FLING || (v >= -FLING && x > -off * 0.65f)
+                                if (back) nav.sidebarHidden = false
+                                else scope.launch { shift.animateTo(-off, SidebarSpring, initialVelocity = v) }
+                            },
+                            onDragCancel = { scope.launch { shift.animateTo(-off, SidebarSpring) } },
+                        ) { change, dx ->
+                            change.consume()
+                            x = (x + dx).coerceIn(-off, 0f)
+                            tracker.addPosition(change.uptimeMillis, Offset(x, 0f))
+                            scope.launch { shift.snapTo(x) }
+                        }
+                    },
+            ),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                .graphicsLayer {
+                    // Slides in from the edge; fades as the sidebar is pulled out over it.
+                    val out = ((shift.value + off) / off).coerceIn(0f, 1f)
+                    alpha = appear * (1f - out)
+                    translationX = -(1f - appear) * size.width
+                }
+                .size(width = 20.dp, height = 92.dp)
+                .glass(RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp), GlassKind.Bar, tint = SidebarSmoke.copy(alpha = 0.8f), rim = false),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.offset(x = (-1).dp).size(width = 4.dp, height = 34.dp).background(Color.White.copy(alpha = 0.75f), CircleShape))
+        }
+    }
+}
+
+private val SidebarSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f)
+/** A flick at least this fast (px a second) decides, wherever the finger let go. */
+private const val FLING = 900f
 
 /** Where among [pinned] the app being dragged would be put, or null if it isn't over the sidebar (or can't go there). */
 private fun gapIndex(nav: Nav, pinned: List<AppInfo>, full: Boolean): Int? {

@@ -166,6 +166,15 @@ class Nav(start: Tab) {
     var nowPlayingCard = Rect.Zero
     /** CarPlay mode is on (set by [App]). */
     var carPlay = false
+    /** CarPlay mode's apps are on the screen, under the floating sidebar (set by [App]). */
+    var appsShown by mutableStateOf(false)
+    /**
+     * CarPlay mode, over its apps: the sidebar dragged off the left edge, a handle there
+     * to bring it back. It comes back by itself on Home.
+     */
+    var sidebarHidden by mutableStateOf(false)
+    /** How far the sidebar is pulled off to the left, in pixels (0: in its place). */
+    val sidebarShift = androidx.compose.animation.core.Animatable(0f)
     /**
      * CarPlay mode, while its apps are shown: a sidebar app let go at this point (the
      * window's pixels) goes into that half, next to what's open. False if it isn't over them.
@@ -234,6 +243,9 @@ fun OtilityApp(app: Otility) {
         appsWereShown = appsShown
     }
     LaunchedEffect(nav.tab) { if (nav.tab != Tab.SCREENS) nav.allScreens = false }
+    nav.appsShown = appsShown
+    // Hidden only over the apps: Home has the sidebar back.
+    LaunchedEffect(appsShown) { if (!appsShown) nav.sidebarHidden = false }
     // Dark status bar icons and home bar in light mode, so they show on the white fog.
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.SideEffect {
@@ -355,8 +367,10 @@ fun OtilityApp(app: Otility) {
                             enter = fadeIn(tween(220)) + slideInHorizontally(spring(0.8f, Spring.StiffnessMediumLow)) { -it },
                             exit = fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it },
                         ) {
-                            Sidebar()
+                            FloatingSidebar()
                         }
+                        // Hidden off the left edge (CarPlay mode, over the apps): the handle that brings it back.
+                        SidebarHandle(Modifier.align(Alignment.CenterStart))
                         // Not connected to the car: in the middle of the page beside the sidebar.
                         NotConnectedToast(
                             Modifier.align(Alignment.TopCenter).padding(start = SideInset, top = 14.dp)
