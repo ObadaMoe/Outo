@@ -1,6 +1,17 @@
 package app.leopard.cockpit.ui
 
 import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import android.os.SystemClock
+import app.leopard.cockpit.ui.carplay.AppSwitcher
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -73,9 +84,7 @@ import app.leopard.cockpit.ui.screens.LiftCallbacks
 import app.leopard.cockpit.ui.screens.liftable
 import app.leopard.cockpit.ui.theme.LocalTokens
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntOffset
@@ -250,8 +259,9 @@ val SidebarSmoke = Color(0xFF1C1C21)
 
 /**
  * The sidebar where it floats: in CarPlay mode always dark, over the apps (which run
- * under it, all the width of the screen) and Home. Over the apps, drag it to the left
- * to put it away; [SidebarHandle] brings it back.
+ * under it, all the width of the screen) and Home. Over the apps it slides away by
+ * itself once it hasn't been touched for a few seconds (or dragged to the left);
+ * holding [SidebarHandle] brings it back.
  */
 @Composable
 fun FloatingSidebar() {
@@ -259,13 +269,35 @@ fun FloatingSidebar() {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val settings by Otility.instance.prefs.settings.collectAsState()
+    val switcher by AppSwitcher.open.collectAsState()
     // All the way off: its width and both margins.
     val off = with(density) { (SidebarWidth + SidebarMargin * 2).toPx() }
     val shift = nav.sidebarShift
     LaunchedEffect(nav.sidebarHidden, off) {
         shift.animateTo(if (nav.sidebarHidden) -off else 0f, SidebarSpring)
     }
-    val canHide = nav.carPlay && nav.appsShown && !nav.sidebarHidden
+    val overApps = nav.carPlay && nav.appsShown
+    val canHide = overApps && !nav.sidebarHidden
+    // Untouched for a while over the apps: away. Not while a finger is on it, nor while
+    // something of its is open (Back for the app picker, an app's menu, an app dragged
+    // from it) or the app switcher is up.
+    var held by remember { mutableStateOf(false) }
+    val autoHide = canHide && !held && nav.back == null && nav.menu == null && nav.dragging == null && !switcher
+    LaunchedEffect(autoHide, nav.sidebarTouched) {
+        if (!autoHide) return@LaunchedEffect
+        delay(AUTO_HIDE_MS)
+        nav.sidebarHidden = true
+    }
+    // Every touch on it counts, whatever it does (a tap, a scroll, a hold).
+    val watch = if (!canHide) Modifier else Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val ev = awaitPointerEvent(PointerEventPass.Initial)
+                held = ev.changes.any { it.pressed }
+                nav.sidebarTouched = SystemClock.uptimeMillis()
+            }
+        }
+    }
     // Before the offset: the finger's moves are measured where the sidebar was, not as it follows.
     val drag = if (!canHide) Modifier else Modifier.pointerInput(off) {
         val tracker = VelocityTracker()
@@ -291,7 +323,7 @@ fun FloatingSidebar() {
             scope.launch { shift.snapTo(x) }
         }
     }
-    val body = drag.offset { IntOffset(shift.value.roundToInt(), 0) }
+    val body = watch.then(drag).offset { IntOffset(shift.value.roundToInt(), 0) }
     if (nav.carPlay) {
         val look = remember(settings.accent, settings.reduceTransparency, settings.tintedGlass) {
             tokens(true, settings.accent, settings.reduceTransparency, settings.tintedGlass)
@@ -304,66 +336,61 @@ fun FloatingSidebar() {
 
 /**
  * The sidebar put away (CarPlay mode, over the apps): a small smoky tab at the left edge.
- * Tap it, or pull it to the right, and the sidebar comes back. Android's (and BYD's)
- * swipe in from the edge for Back is kept off it, so pulling it doesn't go back too.
+ * Hold it a moment (it fills as it's held) and the sidebar comes back. A swipe in from
+ * the edge stays BYD's Back, so it takes a hold, not a pull.
  */
 @Composable
 fun SidebarHandle(modifier: Modifier = Modifier) {
     val nav = LocalNav.current
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val off = with(density) { (SidebarWidth + SidebarMargin * 2).toPx() }
     val shift = nav.sidebarShift
     val shown = nav.carPlay && nav.appsShown && nav.sidebarHidden
     val appear by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 260 else 140), label = "handle")
+    // How far through the hold: the tab widens and its grip brightens.
+    val hold = remember { Animatable(0f) }
     if (!shown && appear == 0f) return
     Box(
         modifier
             .size(width = 44.dp, height = 160.dp)
-            .systemGestureExclusion()
             .then(
                 if (!shown) Modifier
-                else Modifier
-                    .pointerInput(Unit) { detectTapGestures { nav.sidebarHidden = false } }
-                    .pointerInput(off) {
-                        val tracker = VelocityTracker()
-                        var x = -off
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                tracker.resetTracking()
-                                x = shift.value
-                                scope.launch { shift.stop() }
-                            },
-                            onDragEnd = {
-                                val v = tracker.calculateVelocity().x
-                                val back = v > FLING || (v >= -FLING && x > -off * 0.65f)
-                                if (back) nav.sidebarHidden = false
-                                else scope.launch { shift.animateTo(-off, SidebarSpring, initialVelocity = v) }
-                            },
-                            onDragCancel = { scope.launch { shift.animateTo(-off, SidebarSpring) } },
-                        ) { change, dx ->
-                            change.consume()
-                            x = (x + dx).coerceIn(-off, 0f)
-                            tracker.addPosition(change.uptimeMillis, Offset(x, 0f))
-                            scope.launch { shift.snapTo(x) }
+                else Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val filling = scope.launch { hold.animateTo(1f, tween(HOLD_MS.toInt(), easing = LinearEasing)) }
+                        // Up (or taken away by a swipe, BYD's Back) before the time: nothing.
+                        val early = withTimeoutOrNull(HOLD_MS) { waitForUpOrCancellation() ?: Unit }
+                        filling.cancel()
+                        if (early == null) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nav.sidebarTouched = SystemClock.uptimeMillis()
+                            nav.sidebarHidden = false
                         }
-                    },
+                        scope.launch { hold.animateTo(0f, tween(180)) }
+                    }
+                },
             ),
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(
             Modifier
                 .graphicsLayer {
-                    // Slides in from the edge; fades as the sidebar is pulled out over it.
+                    // Slides in from the edge; fades as the sidebar comes out over it.
                     val out = ((shift.value + off) / off).coerceIn(0f, 1f)
                     alpha = appear * (1f - out)
                     translationX = -(1f - appear) * size.width
                 }
-                .size(width = 20.dp, height = 92.dp)
+                .size(width = 20.dp + 8.dp * hold.value, height = 92.dp + 12.dp * hold.value)
                 .glass(RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp), GlassKind.Bar, tint = SidebarSmoke.copy(alpha = 0.8f), rim = false),
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.offset(x = (-1).dp).size(width = 4.dp, height = 34.dp).background(Color.White.copy(alpha = 0.75f), CircleShape))
+            Box(
+                Modifier.offset(x = (-1).dp).size(width = 4.dp, height = 34.dp)
+                    .background(Color.White.copy(alpha = 0.6f + 0.4f * hold.value), CircleShape),
+            )
         }
     }
 }
@@ -371,6 +398,10 @@ fun SidebarHandle(modifier: Modifier = Modifier) {
 private val SidebarSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f)
 /** A flick at least this fast (px a second) decides, wherever the finger let go. */
 private const val FLING = 900f
+/** Over the apps, untouched this long, the sidebar slides away. */
+private const val AUTO_HIDE_MS = 3_000L
+/** How long the handle is held to bring the sidebar back. */
+private const val HOLD_MS = 450L
 
 /** Where among [pinned] the app being dragged would be put, or null if it isn't over the sidebar (or can't go there). */
 private fun gapIndex(nav: Nav, pinned: List<AppInfo>, full: Boolean): Int? {

@@ -173,6 +173,8 @@ class Nav(start: Tab) {
      * to bring it back. It comes back by itself on Home.
      */
     var sidebarHidden by mutableStateOf(false)
+    /** CarPlay mode, over the apps: when the sidebar was last touched (uptime), for hiding it once it's left alone. */
+    var sidebarTouched by androidx.compose.runtime.mutableLongStateOf(0L)
     /** How far the sidebar is pulled off to the left, in pixels (0: in its place). */
     val sidebarShift = androidx.compose.animation.core.Animatable(0f)
     /**
