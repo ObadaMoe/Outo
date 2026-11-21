@@ -17,3 +17,6 @@ local.properties
 car-probe/
 
 .DS_Store
+
+# App backups pulled from the car (third-party APKs, device details)
+car-backup/

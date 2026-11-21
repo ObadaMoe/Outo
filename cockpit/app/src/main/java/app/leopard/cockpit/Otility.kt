@@ -10,6 +10,7 @@ import app.leopard.cockpit.car.HelperLauncher
 import app.leopard.cockpit.car.HostManager
 import app.leopard.cockpit.data.AppCatalog
 import app.leopard.cockpit.data.Prefs
+import app.leopard.cockpit.data.SettingsBackup
 import app.leopard.cockpit.data.VehicleFeed
 import app.leopard.cockpit.engine.EngineLog
 import app.leopard.cockpit.engine.EngineSynth
@@ -62,6 +63,8 @@ class Otility : Application() {
         instance = this
         // Why the last Outo closed, and Outo's own crashes, for reading after a drive.
         CrashLog.install(this)
+        // Settings kept in a file for a car update or reset, and brought back from one.
+        SettingsBackup.install(this)
         HelperLauncher.appContext = this
         prefs = Prefs(this)
         catalog = AppCatalog(this)
