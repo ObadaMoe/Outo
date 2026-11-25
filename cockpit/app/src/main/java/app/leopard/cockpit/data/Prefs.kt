@@ -96,6 +96,11 @@ data class Settings(
     val autoUpdate: Boolean = true,
     /** Ask with pop-ups when that check finds one: Download?, then Install? (while parked). */
     val updatePrompts: Boolean = true,
+    // BYD's bars
+    /** Hide BYD's status bar (top) while Outo is in front; a swipe in from the edge shows it a moment. */
+    val hideTopBar: Boolean = true,
+    /** The same for BYD's button bar (bottom). */
+    val hideBottomBar: Boolean = true,
 )
 
 data class Layout(val name: String, val state: ScreensState)
@@ -374,7 +379,7 @@ class Prefs(context: Context) {
         put("livePreviews", s.livePreviews)
         put("confirmReplace", s.confirmReplace); put("autoHideSeconds", s.autoHideSeconds)
         put("gestures", s.gestures)
-        put("restoreLayout", s.restoreLayout); put("startWithCar", s.startWithCar); put("autoUpdate", s.autoUpdate); put("updatePrompts", s.updatePrompts); put("startTab", s.startTab.name)
+        put("restoreLayout", s.restoreLayout); put("startWithCar", s.startWithCar); put("autoUpdate", s.autoUpdate); put("updatePrompts", s.updatePrompts); put("hideTopBar", s.hideTopBar); put("hideBottomBar", s.hideBottomBar); put("startTab", s.startTab.name)
         put("clusterCode", s.clusterCode); put("mapOnCluster", s.mapOnCluster); put("signalView", s.signalView)
         put("phoneHandoff", s.phoneHandoff); put("navApp", s.navApp)
         put("phoneNotes", s.phoneNotes); put("noteText", s.noteText.name)
@@ -417,6 +422,8 @@ class Prefs(context: Context) {
             startWithCar = b("startWithCar", d.startWithCar),
             autoUpdate = b("autoUpdate", d.autoUpdate),
             updatePrompts = b("updatePrompts", d.updatePrompts),
+            hideTopBar = b("hideTopBar", d.hideTopBar),
+            hideBottomBar = b("hideBottomBar", d.hideBottomBar),
             startTab = startTab(o, d),
             clusterCode = i("clusterCode", d.clusterCode),
             // Before the switch: on if the cluster had a map, map only.

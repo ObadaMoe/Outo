@@ -248,6 +248,17 @@ fun OtilityApp(app: Otility) {
     nav.appsShown = appsShown
     // Hidden only over the apps: Home has the sidebar back.
     LaunchedEffect(appsShown) { if (!appsShown) nav.sidebarHidden = false }
+    // Away, two fingers to the right bring it back (seen by MainActivity, over the app).
+    val revealHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    SidebarReveal.hidden = appsShown && nav.sidebarHidden
+    androidx.compose.runtime.DisposableEffect(nav) {
+        SidebarReveal.show = {
+            revealHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            nav.sidebarTouched = android.os.SystemClock.uptimeMillis()
+            nav.sidebarHidden = false
+        }
+        onDispose { SidebarReveal.show = null; SidebarReveal.hidden = false }
+    }
     // Dark status bar icons and home bar in light mode, so they show on the white fog.
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.SideEffect {
@@ -371,8 +382,6 @@ fun OtilityApp(app: Otility) {
                         ) {
                             FloatingSidebar()
                         }
-                        // Hidden off the left edge (CarPlay mode, over the apps): the handle that brings it back.
-                        SidebarHandle(Modifier.align(Alignment.CenterStart))
                         // Not connected to the car: in the middle of the page beside the sidebar.
                         NotConnectedToast(
                             Modifier.align(Alignment.TopCenter).padding(start = SideInset, top = 14.dp)

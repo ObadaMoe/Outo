@@ -345,7 +345,7 @@ private fun DisplayPage() {
     val t = LocalTokens.current
     Group(
         header = "Mode",
-        footer = if (s.mode == UiMode.CARPLAY) "Like CarPlay: Home is the map and Now Playing, then your apps on pages, Settings among them; swipe beside the map, or tap Home again. Apps open beside the sidebar; two fingers up show the ones used lately."
+        footer = if (s.mode == UiMode.CARPLAY) "Like CarPlay: Home is the map and Now Playing, then your apps on pages, Settings among them; swipe beside the map, or tap Home again. Apps fill the screen, with the sidebar over them; two fingers up show the ones used lately."
         else "Home is the Overview, with its widgets and the map. The three screens, Settings and Home stay on the sidebar.",
     ) {
         Box(Modifier.padding(16.dp)) {
@@ -389,6 +389,14 @@ private fun DisplayPage() {
         Separator()
         Toggle("Reduce transparency", s.reduceTransparency, "Solid surfaces instead of glass") { st, v -> st.copy(reduceTransparency = v) }
     }
+    Group(
+        header = "BYD's bars",
+        footer = "Hidden while Outo is in front, so it has the whole screen. Swipe in from the top or bottom edge to see them for a moment.",
+    ) {
+        Toggle("Hide the top bar", s.hideTopBar, "The status bar") { st, v -> st.copy(hideTopBar = v) }
+        Separator()
+        Toggle("Hide the bottom bar", s.hideBottomBar, "Climate, Home and Back") { st, v -> st.copy(hideBottomBar = v) }
+    }
     Group(header = "Idle screens") {
         Toggle("Show the emblem", s.showEmblem) { st, v -> st.copy(showEmblem = v) }
         Separator()
@@ -429,6 +437,8 @@ private fun ScreensPage() {
     if (s.mode == UiMode.CARPLAY) Group(header = "Gestures") {
         listOf(
             "Two fingers up" to "The app switcher: the apps and splits used lately. Tap one to have it back, swipe one up to close it",
+            "Two fingers to the right" to "The sidebar, once it has slid away over an app",
+            "Two fingers left or right" to "With the sidebar showing: the app moves to that half, and the other half picks an app to go next to it",
             "Home" to "Leave the app or split; tapped again, the dashboard",
             "Swipe in from the left edge" to "Back, inside the app",
             "Drag the handle between two apps" to "Resize; past the edge, the other one fills the screen",

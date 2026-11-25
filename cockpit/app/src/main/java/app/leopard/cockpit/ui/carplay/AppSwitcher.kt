@@ -90,13 +90,19 @@ object AppSwitcher {
 }
 
 /**
- * Two fingers swiped up together, seen before Outo's window hands the touch on (so over
- * an app too). Once it's the switcher's, the window gets a cancel ([cancel]), as when a
- * system gesture takes over, and nothing more of that touch. Both fingers have to go up
- * and stay about as far apart as they started: two fingers spreading or pinching (a
- * map's zoom) stay the app's.
+ * Two fingers swiped together one way ([dirX], [dirY]: up is 0, -1; to the right 1, 0),
+ * seen before Outo's window hands the touch on (so over an app too). Once it's taken,
+ * the window gets a cancel ([cancel]), as when a system gesture takes over, and nothing
+ * more of that touch. Both fingers have to go that way and stay about as far apart as
+ * they started: two fingers spreading or pinching (a map's zoom) stay the app's.
  */
-class TwoFingersUp(private val dp: Float, private val enabled: () -> Boolean, private val onSwipe: () -> Unit) {
+class TwoFingerSwipe(
+    private val dp: Float,
+    private val dirX: Int,
+    private val dirY: Int,
+    private val enabled: () -> Boolean,
+    private val onSwipe: () -> Unit,
+) {
     private var tracking = false
     private var taken = false
     private var x0 = 0f
@@ -117,7 +123,7 @@ class TwoFingersUp(private val dp: Float, private val enabled: () -> Boolean, pr
                     tracking = true
                     x0 = cx(ev); y0 = cy(ev); t0 = ev.eventTime
                     spread0 = spread(ev)
-                    down[0] = ev.getY(0); down[1] = ev.getY(1)
+                    down[0] = along(ev, 0); down[1] = along(ev, 1)
                 } else {
                     tracking = false
                 }
@@ -126,13 +132,16 @@ class TwoFingersUp(private val dp: Float, private val enabled: () -> Boolean, pr
             MotionEvent.ACTION_MOVE -> if (tracking && ev.pointerCount == 2) {
                 val dx = cx(ev) - x0
                 val dy = cy(ev) - y0
+                // How far the way asked for, and how far off it.
+                val went = dx * dirX + dy * dirY
+                val off = abs(dx * dirY) + abs(dy * dirX)
                 val far = FAR_DP * dp
-                // Each finger on its way up, not one still while the other moves.
-                val both = ev.getY(0) - down[0] < -far * 0.5f && ev.getY(1) - down[1] < -far * 0.5f
-                val pinch = abs(spread(ev) - spread0) > -dy * 0.6f
+                // Each finger on its way, not one still while the other moves.
+                val both = along(ev, 0) - down[0] > far * 0.5f && along(ev, 1) - down[1] > far * 0.5f
+                val pinch = abs(spread(ev) - spread0) > went * 0.6f
                 if (ev.eventTime - t0 > MAX_MS) {
                     tracking = false
-                } else if (-dy > far && -dy > abs(dx) * 1.3f && both && !pinch) {
+                } else if (went > far && went > off * 1.3f && both && !pinch) {
                     tracking = false
                     taken = true
                     val c = MotionEvent.obtain(ev)
@@ -153,12 +162,14 @@ class TwoFingersUp(private val dp: Float, private val enabled: () -> Boolean, pr
         return taken
     }
 
+    /** Finger [i]'s place along the way asked for. */
+    private fun along(ev: MotionEvent, i: Int): Float = ev.getX(i) * dirX + ev.getY(i) * dirY
     private fun cx(ev: MotionEvent): Float { var s = 0f; for (i in 0 until ev.pointerCount) s += ev.getX(i); return s / ev.pointerCount }
     private fun cy(ev: MotionEvent): Float { var s = 0f; for (i in 0 until ev.pointerCount) s += ev.getY(i); return s / ev.pointerCount }
     private fun spread(ev: MotionEvent): Float = kotlin.math.hypot(ev.getX(1) - ev.getX(0), ev.getY(1) - ev.getY(0))
 
     private companion object {
-        /** How far up, in dp, and within how long. */
+        /** How far, in dp, and within how long. */
         const val FAR_DP = 60f
         const val MAX_MS = 1000L
     }

@@ -1,17 +1,9 @@
 package app.leopard.cockpit.ui
 
 import androidx.compose.runtime.getValue
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import android.os.SystemClock
 import app.leopard.cockpit.ui.carplay.AppSwitcher
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -261,7 +253,7 @@ val SidebarSmoke = Color(0xFF1C1C21)
  * The sidebar where it floats: in CarPlay mode always dark, over the apps (which run
  * under it, all the width of the screen) and Home. Over the apps it slides away by
  * itself once it hasn't been touched for a few seconds (or dragged to the left);
- * holding [SidebarHandle] brings it back.
+ * two fingers swiped to the right bring it back ([SidebarReveal]).
  */
 @Composable
 fun FloatingSidebar() {
@@ -288,6 +280,8 @@ fun FloatingSidebar() {
         delay(AUTO_HIDE_MS)
         nav.sidebarHidden = true
     }
+    // Something of its is wanted (Back, for the half that's picking an app): out it comes.
+    LaunchedEffect(nav.back != null) { if (nav.back != null) nav.sidebarHidden = false }
     // Every touch on it counts, whatever it does (a tap, a scroll, a hold).
     val watch = if (!canHide) Modifier else Modifier.pointerInput(Unit) {
         awaitPointerEventScope {
@@ -335,64 +329,14 @@ fun FloatingSidebar() {
 }
 
 /**
- * The sidebar put away (CarPlay mode, over the apps): a small smoky tab at the left edge.
- * Hold it a moment (it fills as it's held) and the sidebar comes back. A swipe in from
- * the edge stays BYD's Back, so it takes a hold, not a pull.
+ * Two fingers swiped to the right bring the sidebar back once it has slid away (CarPlay
+ * mode, over the apps). MainActivity sees the swipe before the app under it does; these
+ * are its way to the sidebar, set while Outo's screen is up.
  */
-@Composable
-fun SidebarHandle(modifier: Modifier = Modifier) {
-    val nav = LocalNav.current
-    val density = LocalDensity.current
-    val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val off = with(density) { (SidebarWidth + SidebarMargin * 2).toPx() }
-    val shift = nav.sidebarShift
-    val shown = nav.carPlay && nav.appsShown && nav.sidebarHidden
-    val appear by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 260 else 140), label = "handle")
-    // How far through the hold: the tab widens and its grip brightens.
-    val hold = remember { Animatable(0f) }
-    if (!shown && appear == 0f) return
-    Box(
-        modifier
-            .size(width = 44.dp, height = 160.dp)
-            .then(
-                if (!shown) Modifier
-                else Modifier.pointerInput(Unit) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        val filling = scope.launch { hold.animateTo(1f, tween(HOLD_MS.toInt(), easing = LinearEasing)) }
-                        // Up (or taken away by a swipe, BYD's Back) before the time: nothing.
-                        val early = withTimeoutOrNull(HOLD_MS) { waitForUpOrCancellation() ?: Unit }
-                        filling.cancel()
-                        if (early == null) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            nav.sidebarTouched = SystemClock.uptimeMillis()
-                            nav.sidebarHidden = false
-                        }
-                        scope.launch { hold.animateTo(0f, tween(180)) }
-                    }
-                },
-            ),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Box(
-            Modifier
-                .graphicsLayer {
-                    // Slides in from the edge; fades as the sidebar comes out over it.
-                    val out = ((shift.value + off) / off).coerceIn(0f, 1f)
-                    alpha = appear * (1f - out)
-                    translationX = -(1f - appear) * size.width
-                }
-                .size(width = 20.dp + 8.dp * hold.value, height = 92.dp + 12.dp * hold.value)
-                .glass(RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp), GlassKind.Bar, tint = SidebarSmoke.copy(alpha = 0.8f), rim = false),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.offset(x = (-1).dp).size(width = 4.dp, height = 34.dp)
-                    .background(Color.White.copy(alpha = 0.6f + 0.4f * hold.value), CircleShape),
-            )
-        }
-    }
+object SidebarReveal {
+    /** The sidebar is away now: the swipe is Outo's. */
+    @Volatile var hidden = false
+    @Volatile var show: (() -> Unit)? = null
 }
 
 private val SidebarSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f)
@@ -400,8 +344,6 @@ private val SidebarSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f
 private const val FLING = 900f
 /** Over the apps, untouched this long, the sidebar slides away. */
 private const val AUTO_HIDE_MS = 3_000L
-/** How long the handle is held to bring the sidebar back. */
-private const val HOLD_MS = 450L
 
 /** Where among [pinned] the app being dragged would be put, or null if it isn't over the sidebar (or can't go there). */
 private fun gapIndex(nav: Nav, pinned: List<AppInfo>, full: Boolean): Int? {
