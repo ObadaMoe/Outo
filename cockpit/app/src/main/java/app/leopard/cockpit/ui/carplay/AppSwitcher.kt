@@ -90,7 +90,7 @@ object AppSwitcher {
 }
 
 /**
- * Two fingers swiped together one way ([dirX], [dirY]: up is 0, -1; to the right 1, 0),
+ * Two fingers swiped together one way ([dirX], [dirY]: up is 0, -1; down 0, 1),
  * seen before Outo's window hands the touch on (so over an app too). Once it's taken,
  * the window gets a cancel ([cancel]), as when a system gesture takes over, and nothing
  * more of that touch. Both fingers have to go that way and stay about as far apart as

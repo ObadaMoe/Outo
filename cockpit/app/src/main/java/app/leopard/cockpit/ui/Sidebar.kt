@@ -253,7 +253,7 @@ val SidebarSmoke = Color(0xFF1C1C21)
  * The sidebar where it floats: in CarPlay mode always dark, over the apps (which run
  * under it, all the width of the screen) and Home. Over the apps it slides away by
  * itself once it hasn't been touched for a few seconds (or dragged to the left);
- * two fingers swiped to the right bring it back ([SidebarReveal]).
+ * two fingers swiped down bring it back ([SidebarReveal]).
  */
 @Composable
 fun FloatingSidebar() {
@@ -329,7 +329,7 @@ fun FloatingSidebar() {
 }
 
 /**
- * Two fingers swiped to the right bring the sidebar back once it has slid away (CarPlay
+ * Two fingers swiped down bring the sidebar back once it has slid away (CarPlay
  * mode, over the apps). MainActivity sees the swipe before the app under it does; these
  * are its way to the sidebar, set while Outo's screen is up.
  */

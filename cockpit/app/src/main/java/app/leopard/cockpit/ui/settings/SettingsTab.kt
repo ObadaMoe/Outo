@@ -437,8 +437,8 @@ private fun ScreensPage() {
     if (s.mode == UiMode.CARPLAY) Group(header = "Gestures") {
         listOf(
             "Two fingers up" to "The app switcher: the apps and splits used lately. Tap one to have it back, swipe one up to close it",
-            "Two fingers to the right" to "The sidebar, once it has slid away over an app",
-            "Two fingers left or right" to "With the sidebar showing: the app moves to that half, and the other half picks an app to go next to it",
+            "Two fingers down" to "The sidebar, once it has slid away over an app",
+            "Two fingers left or right" to "Split: the app moves to that half, and the other half picks an app to go next to it",
             "Home" to "Leave the app or split; tapped again, the dashboard",
             "Swipe in from the left edge" to "Back, inside the app",
             "Drag the handle between two apps" to "Resize; past the edge, the other one fills the screen",

@@ -93,12 +93,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * CarPlay mode, the sidebar slid away over an app: two fingers to the right bring it
-     * back. The only way back, so it doesn't wait on the Gestures switch.
+     * CarPlay mode, the sidebar slid away over an app: two fingers down bring it back
+     * (sideways they split the screen). The only way back, so it doesn't wait on the
+     * Gestures switch.
      */
-    private val twoRight by lazy {
+    private val twoDown by lazy {
         TwoFingerSwipe(
-            resources.displayMetrics.density, 1, 0,
+            resources.displayMetrics.density, 0, 1,
             enabled = { SidebarReveal.hidden },
             onSwipe = { SidebarReveal.show?.invoke() },
         )
@@ -106,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (twoUp.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
-        if (twoRight.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
+        if (twoDown.onTouch(ev) { super.dispatchTouchEvent(it) }) return true
         return super.dispatchTouchEvent(ev)
     }
 

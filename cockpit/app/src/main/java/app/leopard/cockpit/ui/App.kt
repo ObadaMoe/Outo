@@ -248,7 +248,7 @@ fun OtilityApp(app: Otility) {
     nav.appsShown = appsShown
     // Hidden only over the apps: Home has the sidebar back.
     LaunchedEffect(appsShown) { if (!appsShown) nav.sidebarHidden = false }
-    // Away, two fingers to the right bring it back (seen by MainActivity, over the app).
+    // Away, two fingers down bring it back (seen by MainActivity, over the app).
     val revealHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     SidebarReveal.hidden = appsShown && nav.sidebarHidden
     androidx.compose.runtime.DisposableEffect(nav) {
